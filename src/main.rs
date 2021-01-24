@@ -38,6 +38,7 @@ pub mod mem;
 pub mod syscall;
 pub mod arch;
 pub mod vga;
+pub mod tty;
 
 #[global_allocator]
 static KERNEL_GLOBAL_ALLOC: KernelGlobalAlloc = KernelGlobalAlloc::new();
@@ -168,6 +169,20 @@ pub extern "sysv64" fn _start(_bootloader_handle_uefi: uefi_rs::Handle, sys_tabl
 //		vga_test_buf[2] = b'B';
 //		vga_test_buf[3] = b'C';
 //	}
+	
+	// DEBUG:
+	unsafe {
+		tty::enable_serial_tty();
+		
+		for i in 0..usize::MAX {
+//			tty::write_tty(b"\x1b[35m\x1b[40m");
+			tty::write_tty(b"\x1b[3");
+			tty::write_tty_char(b'0' + (i % 8usize) as u8);
+			tty::write_tty_char(b'm');
+			
+			tty::write_tty(b"ABC");
+		}
+	}
 	
 	// DEBUG:
 	stdout.write_str("[[ after tty write ]]\n").unwrap();
