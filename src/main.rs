@@ -5,6 +5,8 @@
 #![feature(asm)]
 //#![feature(generic_associated_types)]
 #![feature(const_fn)]
+#![feature(naked_functions)]
+#![feature(c_variadic)]
 
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(lang_items)]
@@ -17,6 +19,7 @@ use core::panic::PanicInfo;
 
 use crate::global_alloc::KernelGlobalAlloc;
 
+pub mod acpi;
 pub mod global_alloc;
 pub mod proc;
 pub mod uefi;
