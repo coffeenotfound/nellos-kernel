@@ -3,6 +3,7 @@
 
 #![feature(alloc_error_handler)]
 //#![feature(generic_associated_types)]
+#![feature(const_fn)]
 
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(lang_items)]
@@ -18,6 +19,7 @@ use crate::global_alloc::KernelGlobalAlloc;
 pub mod global_alloc;
 pub mod fallible;
 pub mod uefi;
+pub mod mem;
 
 #[global_allocator]
 static KERNEL_GLOBAL_ALLOC: KernelGlobalAlloc = KernelGlobalAlloc::new();
