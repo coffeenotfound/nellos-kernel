@@ -4,6 +4,7 @@
 #![feature(alloc_error_handler)]
 //#![feature(generic_associated_types)]
 
+#![feature(nonnull_slice_from_raw_parts)]
 #![feature(lang_items)]
 
 extern crate alloc;
@@ -16,6 +17,7 @@ use crate::global_alloc::KernelGlobalAlloc;
 
 pub mod global_alloc;
 pub mod fallible;
+pub mod uefi;
 
 #[global_allocator]
 static KERNEL_GLOBAL_ALLOC: KernelGlobalAlloc = KernelGlobalAlloc::new();
