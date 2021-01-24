@@ -22,6 +22,7 @@ pub mod proc;
 pub mod uefi;
 pub mod mem;
 pub mod syscall;
+pub mod vga;
 
 #[global_allocator]
 static KERNEL_GLOBAL_ALLOC: KernelGlobalAlloc = KernelGlobalAlloc::new();
