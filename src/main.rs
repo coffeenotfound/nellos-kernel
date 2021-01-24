@@ -17,6 +17,7 @@ use core::panic::PanicInfo;
 use crate::global_alloc::KernelGlobalAlloc;
 
 pub mod global_alloc;
+pub mod proc;
 pub mod uefi;
 pub mod mem;
 
