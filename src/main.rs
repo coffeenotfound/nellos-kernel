@@ -2,6 +2,7 @@
 #![no_main]
 
 #![feature(alloc_error_handler)]
+#![feature(asm)]
 //#![feature(generic_associated_types)]
 #![feature(const_fn)]
 
@@ -20,6 +21,7 @@ pub mod global_alloc;
 pub mod proc;
 pub mod uefi;
 pub mod mem;
+pub mod syscall;
 
 #[global_allocator]
 static KERNEL_GLOBAL_ALLOC: KernelGlobalAlloc = KernelGlobalAlloc::new();
