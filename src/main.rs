@@ -25,6 +25,7 @@ pub mod proc;
 pub mod uefi;
 pub mod mem;
 pub mod syscall;
+pub mod arch;
 pub mod vga;
 
 #[global_allocator]
