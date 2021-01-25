@@ -37,10 +37,10 @@ pub(self) unsafe fn read_msr(msr: u32) -> u64 {
 	
 	asm!(
 		"rdmsr",
-		
 		in("ecx") msr,
 		out("eax") low,
 		out("edx") high,
+		options(nostack),
 	);
 	
 	((high as u64) << 32) | low as u64
@@ -50,9 +50,9 @@ pub(self) unsafe fn read_msr(msr: u32) -> u64 {
 pub(self) unsafe fn write_msr(msr: u32, val: u64) {
 	asm!(
 		"wrmsr",
-		
 		in("ecx") msr,
 		in("eax") val as u32,
 		in("edx") (val >> 32) as u32,
+		options(nostack),
 	);
 }

@@ -5,6 +5,7 @@ pub unsafe fn outb(port: u16, val: u8) {
 		"out dx, al",
 		in("dx") port,
 		in("al") val,
+		options(nostack),
 	);
 }
 
@@ -15,6 +16,7 @@ pub unsafe fn inb(port: u16) -> u8 {
 		"in al, dx",
 		in("dx") port,
 		out("al") val,
+		options(nostack),
 	);
 	val
 }
