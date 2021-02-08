@@ -22,8 +22,15 @@
 	"## has_elf_tls": false,
 	
 	"pre-link-args": {
-		"ld.lld": []
+		"ld.lld": [
+			"--Ttext=0x2000000",
+			"--nostdlib"
+		]
 	},
+	"__# dis-args": [
+		"--pie",
+		"--Ttext=0"
+	],
 	
     "linker-flavor": "ld.lld",
 	"__## linker": "rust-lld", "__comment-l20": "commented out because rust-lld freezes on win, don't know why... but not specifying a linker for flavor ld.lld seems to work just fine (and actually uses llvm's ld.ldd, unsurprisingly)"

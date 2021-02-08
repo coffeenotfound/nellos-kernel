@@ -8,6 +8,4 @@ build-std-features = ["compiler-builtins-mem"]
 [target.x86_64-none-kernel-nabi]
 rustflags = [
 #	"-C", "link-arg=-Tkernel.ld",
-	"-C", "link-arg=--pie",
-#	"-C", "link-arg=--Ttext=0",
 ]
