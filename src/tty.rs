@@ -16,7 +16,6 @@ pub unsafe fn enable_serial_tty() {
 	outb(PORT + 4, 0x0F); // Enter normal operating mode
 }
 
-#[inline]
 pub unsafe fn write_tty_char(ch: u8) {
 	// Wait for tx port empty
 	while inb(PORT + 5) & 0x20 == 0 {
@@ -29,6 +28,33 @@ pub unsafe fn write_tty_char(ch: u8) {
 
 pub unsafe fn write_tty(msg: &[u8]) {
 	for &ch in msg {
+		// TODO: This is an ugly hack for now
+		if ch == b'\n' {
+			write_tty_char(b'\r');
+		}
 		write_tty_char(ch);
+	}
+}
+
+pub unsafe fn write_tty_nl_only() {
+	write_tty(b"\r\n");
+}
+
+pub unsafe fn write_tty_ln(msg: &[u8]) {
+	write_tty(msg);
+	write_tty_nl_only();
+}
+
+pub unsafe fn tty_writer() -> TtyWriter {
+	TtyWriter
+}
+
+pub struct TtyWriter;
+impl core::fmt::Write for TtyWriter {
+	fn write_str(&mut self, s: &str) -> core::fmt::Result {
+		unsafe {
+			write_tty(s.as_bytes());
+		}
+		Ok(())
 	}
 }
