@@ -12,8 +12,10 @@
 	"relocation_model": "pic",
 	"position_independent_executables": true,
 	"static_position_independent_executables": true,
+	"no_default_libraries": true,
 	
 	"emit-debug-gdb-scripts": true,
+	"trap_unreachable": true,
 	
 	"cpu": "core2", "__comment_l14": "Some basic x86_64 cpu without a lot of features",
 	"features": "-mmx,-sse,+soft-float", "__comment-l15": "Disable mmx, sse and floats in general (as they all use sse instructions) so we don't have to save/restore 10 gazillion registers in each ISR invocation [[NOTE: remember to zero out xmm,ymm,zmm,etc. state on context switch from a process with sse activated to one without]]",
