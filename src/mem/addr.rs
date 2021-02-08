@@ -10,6 +10,10 @@ impl<A: Addr> Phys<A> {
 	pub const fn new(raw: A) -> Self {
 		Self(raw)
 	}
+	
+	pub fn ptr(self) -> A {
+		self.0
+	}
 }
 
 pub trait Addr {}
