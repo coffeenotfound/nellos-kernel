@@ -1,3 +1,4 @@
+use core::ptr::NonNull;
 
 #[deprecated(note = "Use normal pointers/references instead which are implicitely assumed to be in the virtual memory map of the kernel.")]
 #[repr(transparent)]
@@ -20,6 +21,8 @@ pub trait Addr {}
 
 impl<T: ?Sized> Addr for *const T {}
 impl<T: ?Sized> Addr for *mut T {}
+impl<T: ?Sized> Addr for NonNull<T> {}
+
 
 // Normal references are probably a bit too dangerous specifically
 // when used in a Phys wrapper as it makes it too easy to use
