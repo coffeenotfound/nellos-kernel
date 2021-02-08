@@ -23,6 +23,29 @@ impl<T: ?Sized> Addr for *const T {}
 impl<T: ?Sized> Addr for *mut T {}
 impl<T: ?Sized> Addr for NonNull<T> {}
 
+impl<T: ?Sized> Clone for Phys<*const T> {
+	fn clone(&self) -> Self {
+		*self
+	}
+}
+impl<T: ?Sized> Clone for Phys<*mut T> {
+	fn clone(&self) -> Self {
+		*self
+	}
+}
+impl<T: ?Sized> Clone for Phys<NonNull<T>> {
+	fn clone(&self) -> Self {
+		*self
+	}
+}
+
+impl<T: ?Sized> Copy for Phys<*const T> {}
+impl<T: ?Sized> Copy for Phys<*mut T> {}
+impl<T: ?Sized> Copy for Phys<NonNull<T>> {}
+
+unsafe impl<T: ?Sized> Send for Phys<*const T> {}
+unsafe impl<T: ?Sized> Send for Phys<*mut T> {}
+unsafe impl<T: ?Sized> Send for Phys<NonNull<T>> {}
 
 // Normal references are probably a bit too dangerous specifically
 // when used in a Phys wrapper as it makes it too easy to use
