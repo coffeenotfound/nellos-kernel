@@ -448,6 +448,41 @@ pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table
 		asm!("mov {}, cs", out(reg) new_cs);
 		writeln!(tty_writer(), "new CS {:04x}h", new_cs);
 	}
+	
+	unsafe {
+		use arch::x86_64::msr::*;
+		
+		let apic_base_msr = Msr::from_nr(0x0000_001b);
+		let apic_base_msr_val = apic_base_msr.read();
+		
+		let lapic_base = apic_base_msr_val & 0xf_ffff_ffff_f000;
+		
+		// Log
+		writeln!(tty_writer(), "apic_base_msr = {:08x} (ABA {:x}, AE {:b}, BSC {:b})",
+			apic_base_msr_val,
+			lapic_base,
+			(apic_base_msr_val >> 11) & 0b1,
+			(apic_base_msr_val >> 8) & 0b1,
+		);
+		
+		writeln!(tty_writer(), "lapic id = 0x{:x}, lapic ver = 0x{:x}", ((lapic_base+0x20) as *const u32).read_volatile(), ((lapic_base+0x30) as *const u32).read_volatile());
+		
+		// DEBUG:
+		writeln!(tty_writer(), "spurious reg = 0x{:0x}", ((lapic_base+0xf0) as *const u32).read_volatile());
+		((lapic_base+0xf0) as *mut u32).write_volatile(0x10f);
+		
+		// Reenable interrupts
+		sti();
+		
+		// DEBUG:
+		writeln!(tty_writer(), "requesting interrupt");
+		asm!("int3");
+		writeln!(tty_writer(), "after interrupt");
+	}
+	
+	unsafe {
+		// Configure ioapic(s)
+	}
 	}
 	
 	loop {}
