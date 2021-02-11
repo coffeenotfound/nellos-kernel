@@ -118,7 +118,7 @@ pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table
 	
 	// Alloc buffer for uefi memory map
 	let mmap_size = sys_table_uefi.boot_services().memory_map_size();
-	let mut mmap_buf = FallVec::<u8, UefiBootAlloc>::with_len_zeroed(mmap_size).unwrap();
+	let mut mmap_buf = FallVec::<u8, UefiBootAlloc>::with_len_zeroed(mmap_size + 128).unwrap();
 	
 	// DEBUG:
 	stdout.write_str("[[ alloc'ed mmap buffer ]]\n").unwrap();
