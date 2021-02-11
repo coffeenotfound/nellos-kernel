@@ -38,7 +38,18 @@ impl LongNullSegmentDesc {
 	}
 }
 
-#[deprecated(note = "unimplemented")]
-pub struct LongSystemSegmentDesc {
-	p: u64,
+#[derive(Clone, Debug)]
+#[repr(transparent)]
+pub struct LongSystemSegmentDesc([u32; 4]);
+
+impl LongSystemSegmentDesc {
+	/// Note: `base_addr` must be in canonical form
+	pub const fn new(base_addr: u64, limit: u32, g: u8, avl: u8, p: u8, dpl: u8, desc_type: u8) -> Self {
+		Self([
+			((base_addr & 0xffff) as u32) << 16 | (limit as u32 & 0xffff),
+			(base_addr & 0xff00_0000) as u32 | (g as u32 & 0b1) << 23 | (avl as u32 & 0b1) << 20 | (limit as u32 & 0x000f_0000) | (p as u32 & 0b1) << 15 | (dpl as u32 & 0b11) << 13 | (0b0 << 12) | (desc_type as u32 & 0b1111) << 8 | ((base_addr >> 8) as u32 & 0xffff),
+			(base_addr >> 32) as u32,
+			0x0000_0000,
+		])
+	}
 }
