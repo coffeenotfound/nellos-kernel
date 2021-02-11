@@ -53,7 +53,7 @@ pub static LOW_HEX_FMT_FN: fn(&usize, &mut core::fmt::Formatter<'_>) -> core::fm
 //#[deprecated(note = "Don't use! Only here to force the linker to keep other exported functions in the binary.")]
 #[cfg(target_arch = "x86_64")]
 #[no_mangle]
-pub extern "sysv64" fn _start(_bootloader_handle_uefi: uefi_rs::Handle, sys_table_uefi: uefi_rs::prelude::SystemTable<uefi_rs::table::Boot>) -> ! {
+pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table_uefi: uefi_rs::prelude::SystemTable<uefi_rs::table::Boot>) -> ! {
 	// DEBUG: Print
 	let stdout = sys_table_uefi.stdout();
 	let _ = stdout.set_color(uefi_rs::proto::console::text::Color::LightGreen, uefi_rs::proto::console::text::Color::Black).unwrap();
@@ -138,10 +138,10 @@ pub extern "sysv64" fn _start(_bootloader_handle_uefi: uefi_rs::Handle, sys_tabl
 	// DEBUG:
 	stdout.write_str("[[ in kernel before exit boot serives ]]\n").unwrap();
 	
-//	// Finally exit boot services
-//	let (_status, (rt_table_uefi, mmap_iter)) = sys_table_uefi.exit_boot_services(bootloader_handle_uefi, mmap_buf.as_mut_slice())
-//		.unwrap().split();
-//	
+	// Finally exit boot services
+	let (_status, (rt_table_uefi, mmap_iter)) = sys_table_uefi.exit_boot_services(bootloader_handle_uefi, mmap_buf.as_mut_slice())
+		.unwrap().split();
+	
 //	for mem_desc in mmap_iter {
 //		let mem_desc: &uefi_rs::table::boot::MemoryDescriptor = mem_desc;
 //		
