@@ -35,6 +35,7 @@ use uefi_rs::ResultExt;
 use crate::global_alloc::KernelGlobalAlloc;
 use crate::uefi::boot_alloc::{self, UefiBootAlloc};
 use crate::mem::Phys;
+use crate::arch::x86_64::msr::Msr;
 
 pub mod acpi;
 pub mod global_alloc;
