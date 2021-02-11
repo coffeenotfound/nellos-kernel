@@ -12,8 +12,8 @@ pub struct LongCodeDataSegmentDesc([u32; 2]);
 impl LongCodeDataSegmentDesc {
 	pub const fn new_code(d: u8, l: u8, p: u8, dpl: u8, c: u8) -> Self {
 		Self([
-			0x0000_ffff,
-			(0b1u32 << 23) | (d as u32 & 0b1) << 22 | (l as u32 & 0b1) << 21 | (0b1111u32 << 16) | (p as u32 & 0b1) << 15 | (dpl as u32 & 0b11) << 13 | (0b11u32 << 11) | (c as u32 & 0b1) << 10 | (0b10u32 << 8),
+			0x0000_0000,
+			(0b1 << 23) | (d as u32 & 0b1) << 22 | (l as u32 & 0b1) << 21 | (0b0000 << 16) | (p as u32 & 0b1) << 15 | (dpl as u32 & 0b11) << 13 | (0b11 << 11) | (c as u32 & 0b1) << 10 | (0b10 << 8),
 		])
 	}
 	
@@ -22,8 +22,8 @@ impl LongCodeDataSegmentDesc {
 	/// Plus compat mode does actually require it IIRC.
 	pub const fn new_data(p: u8, dpl: u8) -> Self {
 		Self([
-			0x0000_ffff,
-			(0b1100u32 << 20) | (0b1111u32 << 16) | (p as u32 & 0b1) << 15 | (dpl as u32 & 0b11) << 13 | (0b10u32 << 11) | (0b010u32 << 8)
+			0x0000_0000,
+			(0b1100 << 20) | (0b0000 << 16) | (p as u32 & 0b1) << 15 | (dpl as u32 & 0b11) << 13 | (0b10u32 << 11) | (0b010u32 << 8)
 		])
 	}
 }
