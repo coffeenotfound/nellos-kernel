@@ -260,7 +260,7 @@ pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table
 		EFER.write(efer_val);
 		
 		// Set up x86 SYSCALL MSRs
-		STAR.write(0x0); // Clear bits, legacy mode explicitely unsupported
+		STAR.write(0x0); // Clear bits, protected mode explicitely unsupported
 		LSTAR.write(syscall::syscall_handler_long as u64);
 		CSTAR.write(syscall::syscall_handler_compat as u64);
 		SFMASK.write(0x0); // TODO: ?? No clue what flags we should mask
