@@ -287,19 +287,53 @@ pub extern "C" fn _start() {
 //}
 
 #[panic_handler]
-fn kernel_panic_handler(_info: &core::panic::PanicInfo) -> ! {
+#[no_mangle]
+fn kernel_panic_handler(info: &core::panic::PanicInfo) -> ! {
 //	/// Flag for checking reentrant panics, i.e. when
 //	/// code called from this panic handler again panics.
 //	// TODO: This is a bug! panic_handler may be called from multiple threads (maybe running on different processors) so this should really use a KernelThreadLocal
 //	static PANIC_REENTRANT: AtomicBool = AtomicBool::new(false);
 	
-	if let Some(mut ptr) = NonNull::new(GLOBAL_UEFI_STDOUT_PTR.load(SeqCst) as *mut uefi_rs::proto::console::text::Output) {
-		let stdout = unsafe {ptr.as_mut()};
-		let _ = stdout.write_str("Kernel panic\n");
+	unsafe {
+		tty::write_tty(b"\x1b[31;1m");
 		
-//		write!(stdout, "{}", 2);
+		tty::write_tty_nl_only();
+		tty::write_tty_ln(b"Kernel panic!");
+		
+		if let Some(loc) = info.location() {
+			tty::write_tty(b"At ");
+			tty::write_tty(loc.file().as_bytes());
+			
+			tty::write_tty(b"(");
+			
+			let mut line_buf = [0u8; 8];
+			tty::write_tty(format_unsigned(loc.line() as usize, 10, &mut line_buf));
+			tty::write_tty_char(b':');
+			let mut col_buf = [0u8; 8];
+			tty::write_tty(format_unsigned(loc.column() as usize, 10, &mut col_buf));
+			
+			tty::write_tty_ln(b")");
+		}
+		
+		if let Some(msg) = info.message() {
+			writeln!(tty_writer(), "{}", msg);
+//			write!(&mut msg_buf, "{}", msg);
+//			tty::write_tty_ln(&msg_buf.buf[0..msg_buf.len]);
+		}
+		
+//		if let Some(msg) = info.message() {
+//			if let Some(trivial_msg) = msg.as_str() {
+//				tty::write_tty_ln(trivial_msg.as_bytes());				
+//			}
+//		}
 	}
-	loop {}
+	
+//	if let Some(mut ptr) = NonNull::new(GLOBAL_UEFI_STDOUT_PTR.load(SeqCst) as *mut uefi_rs::proto::console::text::Output) {
+//		let stdout = unsafe {ptr.as_mut()};
+////		let _ = stdout.write_str("Kernel panic\n");
+//		
+////		write!(stdout, "{}", 2);
+//	}
 	
 //	if let Some(ptr) = NonNull::new(GLOBAL_UEFI_STDOUT_PTR.load(SeqCst) as *mut ()) {
 //		let stdout = unsafe { mem::transmute::<_, &mut uefi_rs::proto::console::text::Output>(ptr) };
@@ -322,8 +356,12 @@ fn kernel_panic_handler(_info: &core::panic::PanicInfo) -> ! {
 ////		}
 //		let _ = write!(stdout, "{}", info);
 //	}
-//	
-//	loop {}
+	
+	unsafe {
+		loop {
+			asm!("hlt", options(nomem, nostack))
+		}
+	}
 }
 
 fn format_unsigned<'a>(num: usize, radix: usize, buf: &'a mut [u8]) -> &'a mut [u8] {
