@@ -34,13 +34,13 @@ use core::sync::atomic::Ordering::*;
 use fallo::FallVec;
 use uefi_rs::ResultExt;
 
-use crate::arch::x86_64::desctable::{LongCodeDataSegmentDesc, LongIdtDesc, LongNullSegmentDesc, PseudoDesc, SegmentSelector, LongSystemSegmentDesc};
+use crate::arch::x86_64::desctable::{LongCodeDataSegmentDesc, LongIdtDesc, LongNullSegmentDesc, LongSystemSegmentDesc, PseudoDesc, SegmentSelector};
 use crate::arch::x86_64::isr::{cli, sti};
+use crate::arch::x86_64::msr::Msr;
 use crate::global_alloc::KernelGlobalAlloc;
-use crate::uefi::boot_alloc::{self, UefiBootAlloc};
 use crate::mem::Phys;
 use crate::tty::tty_writer;
-use crate::arch::x86_64::msr::Msr;
+use crate::uefi::boot_alloc::{self, UefiBootAlloc};
 
 pub mod acpi;
 pub mod global_alloc;
