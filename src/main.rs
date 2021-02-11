@@ -8,13 +8,18 @@
 #![feature(abi_efiapi)]
 #![feature(naked_functions)]
 #![feature(c_variadic)]
+#![feature(array_chunks)]
 
 #![feature(nonnull_slice_from_raw_parts)]
+#![feature(maybe_uninit_uninit_array)]
+#![feature(maybe_uninit_extra)]
+#![feature(maybe_uninit_slice)]
 
 // DEBUG:
 #![feature(fmt_as_str)]
 #![feature(panic_info_message)]
 #![feature(fmt_internals)]
+#![feature(core_panic)]
 
 extern crate alloc;
 extern crate core;
