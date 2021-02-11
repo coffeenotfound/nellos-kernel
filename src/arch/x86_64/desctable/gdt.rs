@@ -30,13 +30,11 @@ impl LongCodeDataSegmentDesc {
 
 #[derive(Clone, Debug)]
 #[repr(transparent)]
-pub struct LongNullSegmentDesc {
-	p: u64,
-}
+pub struct LongNullSegmentDesc([u32; 2]);
 
 impl LongNullSegmentDesc {
 	pub const fn new() -> Self {
-		Self {p: 0x0}
+		Self([0x0000_0000, 0x0000_0000])
 	}
 }
 
