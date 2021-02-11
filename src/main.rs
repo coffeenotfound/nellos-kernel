@@ -191,15 +191,55 @@ pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table
 	unsafe {
 		tty::enable_serial_tty();
 		
-		for i in 0..usize::MAX {
-//			tty::write_tty(b"\x1b[35m\x1b[40m");
+		/*
+		for i in 0..8 {
+			tty::write_tty(b"\x1b[35m\x1b[40m");
 			tty::write_tty(b"\x1b[3");
 			tty::write_tty_char(b'0' + (i % 8usize) as u8);
 			tty::write_tty_char(b'm');
 			
 			tty::write_tty(b"ABC");
 		}
+		
+		tty::write_tty(b"\x1b[20Cforward!");
+		tty::write_tty(b"\x1b[2Aup!");
+		tty::write_tty(b"\x1b[16Dback!");
+		tty::write_tty(b"\x1b[8S");
+		tty::write_tty(b"\x1b[4Bdown!\r\n");
+		
+		tty::write_tty(b"\x1b[0m");
+		for y in 0..10 {
+			for i in 0..10 {
+				tty::write_tty(b"\x1b[");
+				if y > 0 {
+					tty::write_tty_char(b'0' + y as u8);
+				}
+				tty::write_tty_char(b'0' + i as u8);
+				tty::write_tty_char(b'm');
+				
+				tty::write_tty(b"Test");
+				if y > 0 {
+					tty::write_tty_char(b'0' + y as u8);
+				}
+				tty::write_tty_char(b'0' + i as u8);
+				
+				tty::write_tty(b"\x1b[0m");
+				tty::write_tty_char(b' ');
+			}
+			tty::write_tty(b"\r\n");
+			
+			tty::write_tty(b"\x1b[T");
+		}	
+//		tty::write_tty(b"\x1b[?1049h");
+		tty::write_tty(b"\x1b[1S");
+		tty::write_tty(b"\x1b[1E");
+		
+		tty::write_tty_nl_only();
+		*/
 	}
+	
+//	// DEBUG:
+//	stdout.write_str("[[ after tty write ]]\n").unwrap();
 	
 	// DEBUG:
 	stdout.write_str("[[ after tty write ]]\n").unwrap();
