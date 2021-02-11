@@ -153,10 +153,21 @@ pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table
 //		rt_table_uefi.runtime_services().reset(uefi_rs::table::runtime::ResetType::Shutdown, uefi_rs::Status::SUCCESS, None);
 //  }
 	
-//	unsafe {
-////		acpica_sys::AcpiInitializeSubsystem();
+	unsafe {
+		for entry in rt_table_uefi.config_table() {
+//			if entry.guid == RawUefiGuid::new(0x8868e871, 0xe4f1, 0x11d3, [0xbc,0x22,0x00,0x80,0xc7,0x3c,0x88,0x81]).into_uefi_rs() {
+			if entry.guid == uefi_rs::table::cfg::ACPI2_GUID {
+				let acpi_root_ptr = Phys::new(entry.address as *const cty::c_void);
+				
+				acpi::ACPI_ROOT_PTR.store(acpi_root_ptr, SeqCst);
+			}
+		}
+		
+		acpica_sys::AcpiLoadTables();
+//		acpica_sys::AcpiInitializeSubsystem();
 //		acpica_sys::AcpiOsCreateCache(0x0 as _, 0, 0, 0x0 as _);
-//	}
+	}
+	
 	
 //	// DEBUG:
 //	stdout.write_str("[[ after acpica init ]]\n").unwrap();
