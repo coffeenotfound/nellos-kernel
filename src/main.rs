@@ -325,6 +325,69 @@ fn kernel_panic_handler(_info: &core::panic::PanicInfo) -> ! {
 //	loop {}
 }
 
+fn format_unsigned<'a>(num: usize, radix: usize, buf: &'a mut [u8]) -> &'a mut [u8] {
+	if radix <= 1 || radix > 16 {
+		panic!("Illegal radix {}", radix);
+	}
+	
+	let mut cursor = buf.len() - 1;
+	let mut rest = num;
+	loop {
+		let digit = rest % radix;
+		let digit_char = match digit {
+			i @ 0..=9 => b'0' + i as u8,
+			i @ 10..=15 => b'A' + (i - 10) as u8,
+			_ => unreachable!(),
+		};
+		
+		if let Some(slot) = buf.get_mut(cursor) {
+			*slot = digit_char;
+			cursor -= 1;
+		} else {
+			// Write overflow char
+			if let Some(first) = buf.get_mut(0) {
+				*first = b'^';
+			}
+			break;
+		}
+		
+		rest /= radix;
+		
+		// Do this here instead of using a while loop
+		// so that if num is 0 we still emit one digit (zero)
+		// instead of doing nothing
+		if rest <= 0 {
+			break;
+		}
+	}
+	
+	&mut buf[cursor+1..]
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub enum Radix {
+	Binary,
+	Octal,
+	Decimal,
+	Hex,
+}
+
+//impl Radix {
+//	pub fn base(&self) -> usize {
+//		use Self::*;
+//		match self {
+//			Binary => 2,
+//			Octal => 8,
+//			Decimal => 10,
+//			Hex => 16,
+//		}
+//	}
+//	
+//	pub fn from_base(base: usize) -> Option<Radix> {
+//		
+//	}
+//}
+
 #[alloc_error_handler]
 fn kernel_alloc_error_handler(_layout: core::alloc::Layout) -> ! {
 	panic!("Unfallible global allocation failed (this is a bug, global allocation is forbidden)")
