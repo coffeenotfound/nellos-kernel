@@ -25,6 +25,8 @@ extern crate alloc;
 extern crate core;
 
 use core::fmt::{LowerHex, Write};
+use core::fmt;
+use core::mem::{ManuallyDrop, MaybeUninit};
 use core::ptr::NonNull;
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering::*;
@@ -32,9 +34,12 @@ use core::sync::atomic::Ordering::*;
 use fallo::FallVec;
 use uefi_rs::ResultExt;
 
+use crate::arch::x86_64::desctable::{LongCodeDataSegmentDesc, LongIdtDesc, LongNullSegmentDesc, PseudoDesc, SegmentSelector, LongSystemSegmentDesc};
+use crate::arch::x86_64::isr::{cli, sti};
 use crate::global_alloc::KernelGlobalAlloc;
 use crate::uefi::boot_alloc::{self, UefiBootAlloc};
 use crate::mem::Phys;
+use crate::tty::tty_writer;
 use crate::arch::x86_64::msr::Msr;
 
 pub mod acpi;
@@ -265,10 +270,298 @@ pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table
 		LSTAR.write(syscall::syscall_handler_long as u64);
 		CSTAR.write(syscall::syscall_handler_compat as u64);
 		SFMASK.write(0x0); // TODO: ?? No clue what flags we should mask
+		
+//		#[repr(C)]
+//		struct GdtrPseudoDesc {
+//			_pad: [u16; 3],
+//			limit: u16,
+//			base: u64,
+//		}
+		
+//		static GDTR_VAL: GdtrPseudoDesc = GdtrPseudoDesc {_pad: [0; 3], limit: 1*core::mem::size_of::<u64>() as u16, base: 0x0};
+		
+		{// DEBUG: Dump ovmf gdt and idt
+			// Dump all gdt entries
+			let mut uefi_gdt_desc = PseudoDesc {limit: 0, base: 0};
+			asm!("sgdt [{}]", in(reg) &mut uefi_gdt_desc, options(nostack));
+			
+			for off in (0..=uefi_gdt_desc.limit as usize).step_by(8) {
+				let seg_desc = &*((uefi_gdt_desc.base as usize + off) as *const u64);
+				writeln!(tty_writer(), "dump desc: {:x}", seg_desc);
+			}
+			
+			// Dump idt entry
+			let mut uefi_idt_desc = PseudoDesc {limit: 0, base: 0};
+			asm!("sidt [{}]", in(reg) &mut uefi_idt_desc, options(nostack));
+			
+			writeln!(tty_writer(), "dump #bp idte: +0: {:x}, +8: {:x}", *((uefi_idt_desc.base as usize + 3*16) as *const u64), *((uefi_idt_desc.base as usize + 3*16+8) as *const u64));
+		}
+		
+		static mut GDT_BUF: [MaybeUninit<u64>; 7] = MaybeUninit::uninit_array();
+		static mut IDT_BUF: [MaybeUninit<LongIdtDesc>; 256] = MaybeUninit::uninit_array();
+		static mut TSS_BUF: [u32; 68] = [0; 68];
+		
+		{// Set up the TSS
+			// Reserved, IGN
+			TSS_BUF[0] = 0x0;
+			TSS_BUF[7] = 0x0;
+			TSS_BUF[22] = 0x0;
+			TSS_BUF[23] = 0x0;
+			
+			// Zero out rsp1/rsp2
+			TSS_BUF[3] = 0x0;
+			TSS_BUF[4] = 0x0;
+			TSS_BUF[5] = 0x0;
+			TSS_BUF[6] = 0x0;
+			
+			// Zero out IST entries
+			// TODO: Maybe make use of ISTs in the future
+			for ist in TSS_BUF[8..22].array_chunks_mut::<2>() {
+				*ist = [0x0, 0x0];
+			}
+			
+			// Disable IO Permission Bitmap by setting the IOPB address offset
+			// to u16::MAX, causing it to *definitely* fall outside the TSS segment limit
+			// (https://stackoverflow.com/questions/54876039/creating-a-proper-task-state-segment-tss-structure-with-and-without-an-io-bitm/54876040#54876040)
+			TSS_BUF[24] = (0xffff_ffff << 16) | 0x0000_0000;
+		}
+		
+		// Construct GDT
+		let gdt_ptr = GDT_BUF.as_mut_ptr();
+		(gdt_ptr as *mut LongNullSegmentDesc).write(LongNullSegmentDesc::new());
+		(gdt_ptr.offset(1) as *mut LongCodeDataSegmentDesc).write(LongCodeDataSegmentDesc::new_code(0, 1, 1, 0x0, 0)); // Kernel Code Segment
+		(gdt_ptr.offset(2) as *mut LongCodeDataSegmentDesc).write(LongCodeDataSegmentDesc::new_data(1, 0x0)); // Kernel Data Segment
+		(gdt_ptr.offset(3) as *mut LongCodeDataSegmentDesc).write(LongCodeDataSegmentDesc::new_code(0, 1, 1, 0x3, 1)); // Usermode Code Segment
+		(gdt_ptr.offset(4) as *mut LongCodeDataSegmentDesc).write(LongCodeDataSegmentDesc::new_data(1, 0x3)); // Usermode Data Segment
+		// TODO: Figure out what RPL the TSS descriptor should have
+		(gdt_ptr.offset(5) as *mut LongSystemSegmentDesc).write(LongSystemSegmentDesc::new(TSS_BUF.as_ptr() as u64, core::alloc::Layout::for_value(&TSS_BUF).size().saturating_sub(1) as u32, 0b0, 0b0, 0b1, 0x0, 0xb)); // Long mode TSS
+		
+		// Construct IDT
+		let gdt_code_selector = SegmentSelector::new(0x0, false, 1);
+		for i in 0..256 {
+			let isr: u64 = match i {
+				0x03 => isr_bp as u64,
+				0x08 => isr_df as u64,
+				0x0c => isr_ss as u64,
+				0x0d => isr_gp as u64,
+				_ => isr_any as u64,
+			};
+			IDT_BUF[i].write(LongIdtDesc::new(isr, gdt_code_selector, 0, 0b1110, 0x0, 1));
+		}
+		
+		// TODO: Ensure no interrupts occur before or while configuring the GDT, IDT, APIC, etc. else it will probably crash
+		
+		// Disable interrupts
+		cli();
+		
+		// Set up GDT
+		let gdt_desc = PseudoDesc {
+			base: &GDT_BUF as *const _ as u64,
+//			limit: core::mem::size_of_val(&GDT_BUF).saturating_sub(1) as u16,
+			limit: core::alloc::Layout::for_value(&GDT_BUF).size().saturating_sub(1) as u16,
+		};
+		asm!("lgdt [{}]", in(reg) &gdt_desc, options(nostack));
+		
+		// Set up IDT
+		let idt_desc = PseudoDesc {
+//			base: IDT_BUF.as_ptr() as u64,
+			base: &IDT_BUF as *const _ as u64,
+			limit: core::alloc::Layout::for_value(&IDT_BUF).size().saturating_sub(1) as u16,
+		};
+		asm!("lidt [{}]", in(reg) &idt_desc, options(nostack));
+		
+		// DEBUG:
+		writeln!(tty_writer(), "gdt desc: {:x?}", gdt_desc);
+		writeln!(tty_writer(), "idt desc: {:x?}", idt_desc);
+		writeln!(tty_writer(), "gdt dump: {:x?}", MaybeUninit::slice_assume_init_ref(&GDT_BUF));
+		writeln!(tty_writer(), "idt dump: {:x?}", MaybeUninit::slice_assume_init_ref(&IDT_BUF[0..4]));
+		
+		// DEBUG: Dump gdt entries
+		for (i, off) in (0..=gdt_desc.limit as usize).step_by(8).enumerate() {
+			let seg_desc = &*((gdt_desc.base as usize + off) as *const u64);
+			writeln!(tty_writer(), "dump OUR gdt desc #{:02}: {:x}", i, seg_desc);
+		}
+		
+		// DEBUG: Dump idt entry
+		writeln!(tty_writer(), "dump OUR #bp idte: +0: {:x}, +8: {:x}", *((idt_desc.base as usize + 3*16) as *const u64), *((idt_desc.base as usize + 3*16+8) as *const u64));
+		
+		// Set up segment registers
+		writeln!(tty_writer(), "changing segments");
+		
+		asm!(
+			"mov ds, ax",
+			"mov es, ax",
+			"mov fs, ax",
+			"mov gs, ax",
+			in("ax") 0x0,
+		);
+		
+		// Load null selector into ss reg
+		// I thought the ss needs to be a valid selector but turns
+		// out long mode doesn't care, in fact inter-privelege-level
+		// calls load null ss selectors anyways.
+		asm!(
+			"mov ss, ax",
+//			in("ax") SegmentSelector::new(0x0, false, 2).into_raw(),
+			in("ax") 0x0,
+		);
+		
+		let mut prev_cs: u16;
+		asm!("mov {}, cs", out(reg) prev_cs);
+		writeln!(tty_writer(), "prev CS {:04x}h", prev_cs);
+		
+		writeln!(tty_writer(), "changing cs segment");
+		
+		// Set up cs segment register
+		let mut test_sel: usize = 0;
+		let mut test_label: usize = 0;
+		let mut temp_rip: usize = 0;
+		asm!(
+			"sub rsp, 16",
+			"mov qword ptr [rsp+8], 0",
+			"mov word ptr [rsp+8], {sel:x}",
+			"mov qword ptr [rsp], offset here",
+			
+			// DEBUG:
+			"lea {temp_rip}, [rip]",
+			
+			// NOTE: JMP m16:64 may not be fully portable (AFAIK some early AMDs didn't have it)
+			//  The prefered way would be a retf but I couldn't for the life of me figure that out
+			
+			// This `ljmp tbyte ptr [rsp]` has been verified with a
+			// disassembler to really result in the correct `rex.w jmp m16:64`.
+			"ljmp tbyte ptr [rsp]",
+			"here:",
+			"add rsp, 16",
+			
+			sel = in(reg) SegmentSelector::new(0x0, false, 1).into_raw(),
+			
+			// DEBUG:
+//			test_sel = out(reg) test_sel,
+//			test_label = out(reg) test_label,
+			temp_rip = out(reg) temp_rip,
+		);
+//		writeln!(tty_writer(), "{:016x}, {:04x} ({:016x})", test_label, test_sel as u16, test_sel);
+		writeln!(tty_writer(), "rip {:x}, code dump {:x?}", temp_rip, core::slice::from_raw_parts(temp_rip as *const u8, 64));
+		
+		let mut new_cs: u16;
+		asm!("mov {}, cs", out(reg) new_cs);
+		writeln!(tty_writer(), "new CS {:04x}h", new_cs);
+	}
 	}
 	
 	loop {}
 }
+
+//#[naked]
+//pub unsafe extern "C" fn dummy_isr() {
+////	asm!("iret", options(noreturn));
+//	
+////	asm!(
+////		"LOOP:",
+////		"pause",
+////		"jmp LOOP",
+////		options(noreturn),
+////	);
+//	asm!(
+//		"call {target}",
+//		"iret",
+//		target = sym dummy_isr_cooked,
+//		options(noreturn),
+//	);
+//}
+//
+//pub unsafe extern "sysv64" fn dummy_isr_cooked(_it: u32) {
+//	let apic_base_msr = Msr::from_nr(0x0000_001b);
+//	let apic_base_msr_val = apic_base_msr.read();
+//	
+//	let lapic_base = apic_base_msr_val & 0xf_ffff_ffff_f000;
+//	
+//	// Send EOI to lapic
+//	((lapic_base+0xb0) as *mut u32).write_volatile(0x00);
+//	
+//	tty::write_tty_ln(b"IN ISR");
+////	asm!(
+////		"div {zero}",
+////		zero = in(reg) 0,
+////	);
+////	for _ in 0..usize::MAX {}
+//}
+
+macro_rules! adhoc_isr {
+	($name:ident => $id:expr, $ec:tt) => {
+		#[naked]
+		pub unsafe extern "C" fn $name() {
+			asm!(
+				// Save sysv64 caller-saved registers
+				"sub rsp, 72",
+				"mov [rsp], rax",
+				"mov [rsp+8], rcx",
+				"mov [rsp+16], rdx",
+				"mov [rsp+24], rsi",
+				"mov [rsp+32], rdi",
+				"mov [rsp+40], r8",
+				"mov [rsp+48], r9",
+				"mov [rsp+56], r10",
+				"mov [rsp+64], r11",
+				
+				// Call handler
+				"call {inner}",
+				
+				// Restore saved registers
+				"mov rax, [rsp]",
+				"mov rcx, [rsp+8]",
+				"mov rdx, [rsp+16]",
+				"mov rsi, [rsp+24]",
+				"mov rdi, [rsp+32]",
+				"mov r8, [rsp+40]",
+				"mov r9, [rsp+48]",
+				"mov r10, [rsp+56]",
+				"mov r11, [rsp+64]",
+				"add rsp, 72",
+				adhoc_isr!(@poperrcode; $ec),
+				
+				"iretq",
+				
+				inner = sym _inner,
+				options(noreturn),
+			);
+			
+			unsafe extern "sysv64" fn _inner() {
+				// Signal EOI to lapic
+				let lapic_base = Msr::from_nr(0x0000_001b).read() & 0xf_ffff_ffff_f000;
+				((lapic_base+0xb0) as *mut u32).write_volatile(0x00);
+				
+				let _ = writeln!(tty_writer(), "> IN ISR: {}", $id);
+				if $ec {
+					let errcode: usize;
+					let rip: usize;
+					asm!(
+						"pop {temp:r}", // Pop frame return rip
+						"pop {errcode:r}", // Pop error code
+						"push {temp:r}", // Re-push frame retur rip
+						
+						errcode = out(reg) errcode,
+						temp = out(reg) _,
+					);
+					asm!("mov {:r}, qword ptr [rsp]", out(reg) rip);
+					
+					let _ = writeln!(tty_writer(), "errcode {:x}, rip {:08x}", errcode, rip);
+				}
+				
+//				for _ in 0..(0x1<<20) {}
+			}
+		}
+	};
+	(@poperrcode; true) => ("add rsp, 8");
+	(@poperrcode; false) => ("");
+}
+
+adhoc_isr!(isr_any => "#any", false);
+adhoc_isr!(isr_bp => "#bp", false);
+adhoc_isr!(isr_df => "#df", false);
+adhoc_isr!(isr_ss => "#ss", false);
+adhoc_isr!(isr_gp => "#gp", true);
 
 #[cfg(target_arch = "aarch64")]
 #[no_mangle]
