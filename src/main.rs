@@ -29,6 +29,7 @@ use uefi_rs::ResultExt;
 
 use crate::global_alloc::KernelGlobalAlloc;
 use crate::uefi::boot_alloc::{self, UefiBootAlloc};
+use crate::mem::Phys;
 
 pub mod acpi;
 pub mod global_alloc;
@@ -287,4 +288,23 @@ mod type_check {
 	use crate::_start;
 	
 	static _TYPE_CHECK_ENTRY_FN: KernelEntryFn = _start;
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+#[repr(C)]
+pub struct RawUefiGuid {
+	a: u32,
+	b: u16,
+	c: u16,
+	d: [u8; 8],
+}
+
+impl RawUefiGuid {
+	pub const fn new(a: u32, b: u16, c: u16, d: [u8; 8]) -> Self {
+		Self {a, b, c, d}
+	}
+	
+	pub fn into_uefi_rs(self) -> uefi_rs::Guid {
+		unsafe {core::mem::transmute(self)}
+	}
 }

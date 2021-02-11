@@ -1,22 +1,41 @@
 #![allow(non_snake_case)]
 #![allow(unused_variables)] // TODO: Only for now
 
+use core::ptr;
+
 use cty::{c_char, c_void};
 
 use acpica_sys::*;
+pub use ty::*;
+use core::sync::atomic::Ordering::SeqCst;
 
+//acpica_sys::gen_osl!(crate::acpi::ca::osl::ty);
+
+pub mod ty {
+	#![allow(non_camel_case_types)]
+	
+	pub type ACPI_CPU_FLAGS = u32;
+	pub type ACPI_THREAD_ID = u64;
+	
+	pub type ACPI_SPINLOCK = *mut cty::c_void;
+	pub type ACPI_SEMAPHORE = *mut cty::c_void;
+	pub type ACPI_MUTEX = *mut cty::c_void;
+	
+	pub type ACPI_CACHE_T = acpica_sys::ACPI_MEMORY_LIST;
+}
 /*
  * OSL Initialization and shutdown primitives
  */
 #[no_mangle]
 pub extern "C" fn AcpiOsInitialize() -> ACPI_STATUS {
-//	unimplemented!()
+	// Do nothing for now
 	AE_OK
 }
 
 #[no_mangle]
 pub extern "C" fn AcpiOsTerminate() -> ACPI_STATUS {
-	unimplemented!()
+	// Do nothing for now
+	AE_OK
 }
 
 /*
@@ -24,22 +43,38 @@ pub extern "C" fn AcpiOsTerminate() -> ACPI_STATUS {
  */
 #[no_mangle]
 pub extern "C" fn AcpiOsGetRootPointer() -> ACPI_PHYSICAL_ADDRESS {
-	unimplemented!()
+	let root_ptr = crate::acpi::ACPI_ROOT_PTR.load(SeqCst).ptr();
+	
+	if root_ptr.is_null() {
+		panic!("ACPI root pointer is null");
+	} else {
+		root_ptr as ACPI_PHYSICAL_ADDRESS
+	}
 }
 
 #[no_mangle]
 pub extern "C" fn AcpiOsPredefinedOverride(init_val: *const ACPI_PREDEFINED_NAMES, new_val: &mut ACPI_STRING) -> ACPI_STATUS {
-	unimplemented!()
+	// Don't override any predefined object
+	*new_val = ptr::null_mut();
+	
+	AE_OK
 }
 
 #[no_mangle]
 pub extern "C" fn AcpiOsTableOverride(existing_table: *const ACPI_TABLE_HEADER, new_table: &mut *mut ACPI_TABLE_HEADER) -> ACPI_STATUS {
-	unimplemented!()
+	// Don't override any table
+	*new_table = ptr::null_mut();
+	
+	AE_OK
 }
 
 #[no_mangle]
 pub extern "C" fn AcpiOsPhysicalTableOverride(existing_table: *const ACPI_TABLE_HEADER, new_address: &mut ACPI_PHYSICAL_ADDRESS, new_table_length: &mut UINT32) -> ACPI_STATUS {
-	unimplemented!()
+	// Don't override any table
+	*new_address = ptr::null_mut::<cty::c_void>() as ACPI_PHYSICAL_ADDRESS;
+	*new_table_length = 0;
+	
+	AE_OK
 }
 
 /*
@@ -176,13 +211,25 @@ pub extern "C" fn AcpiOsGetPhysicalAddress(logical_addr: *mut c_void, physical_a
 /*
  * Interrupt handlers
  */
+
+/// This function installs an interrupt handler for a hardware interrupt level. The ACPI driver must
+/// install an interrupt handler to service the SCI (System Control Interrupt) which it owns. The
+/// interrupt level for the SCI interrupt is obtained from the ACPI tables.
+/// 
+/// **interrupt_level**: Interrupt level that the handler will service.<br>
+/// **service_routine**: Address of the handling service routine.<br>
+/// **context**: A context value that is passed to the handler when the interrupt is dispatched.<br>
 #[no_mangle]
-pub extern "C" fn AcpiOsInstallInterruptHandler(interrupt_nr: UINT32, service_routine: ACPI_OSD_HANDLER, context: *mut c_void) -> ACPI_STATUS {
+pub extern "C" fn AcpiOsInstallInterruptHandler(interrupt_level: UINT32, service_routine: ACPI_OSD_HANDLER, context: *mut c_void) -> ACPI_STATUS {
 	unimplemented!()
 }
 
+/// Remove a previously installed hardware interrupt handler.
+/// 
+/// **interrupt_level**: Interrupt number that the handler is currently servicing.<br>
+/// **service_routine**: Address of the handler that was previously installed.<br> 
 #[no_mangle]
-pub extern "C" fn AcpiOsRemoveInterruptHandler(interrupt_nr: UINT32, service_routine: ACPI_OSD_HANDLER) -> ACPI_STATUS {
+pub extern "C" fn AcpiOsRemoveInterruptHandler(interrupt_level: UINT32, service_routine: ACPI_OSD_HANDLER) -> ACPI_STATUS {
 	unimplemented!()
 }
 
@@ -191,7 +238,8 @@ pub extern "C" fn AcpiOsRemoveInterruptHandler(interrupt_nr: UINT32, service_rou
  */
 #[no_mangle]
 pub extern "C" fn AcpiOsGetThreadId() -> ACPI_THREAD_ID {
-	unimplemented!()
+	0
+//	unimplemented!()
 }
 
 #[no_mangle]
@@ -229,12 +277,10 @@ pub extern "C" fn AcpiOsWritePort(addr: ACPI_IO_ADDRESS, val: UINT32, width: UIN
 
 #[no_mangle]
 pub extern "C" fn AcpiOsReadMemory(addr: ACPI_PHYSICAL_ADDRESS, out_val: &mut UINT64, width: UINT32) -> ACPI_STATUS {
-	// This implementation is a damn joke but both osunixxf and oswinxf do it this way.
-	// I would do it a whole lot better but I don't think you even *can* read physical
-	// memory without mapping it first
-	// TODO: If we do decide to identity map all of the physical memory into the kernel
-	//  virtual addr space (and we probably will) we actually *could* (and should)
-	//  implement this properly
+	// This implementation is a damn joke but both osunixxf and oswinxf haveit
+	// Thing is, Linux actually implements it correctly and this functions is REALLY important (see acpica's hwregs.c)
+	// (linux impl under drivers/acpi/osl.c)
+	// TODO: Implement this properly as it is absolute necessary for a functioning ACPICA implementation
 	match width {
 		8 | 16 | 32 | 64 => {
 			*out_val = 0x0;
@@ -301,13 +347,23 @@ pub extern "C" fn AcpiOsEnterSleep(sleep_state: UINT8, reg_a: UINT32, reg_b: UIN
  * Debug print routines
  */
 #[no_mangle]
-pub unsafe extern "C" fn AcpiOsPrintf(format: *const c_char, #[allow(unused_mut)] mut args: ...) -> ACPI_STATUS {
-	unimplemented!()
+pub unsafe extern "C" fn AcpiOsPrintf(format: *const c_char, #[allow(unused_mut)] mut args: ...) {
+	let mut len = 0;
+	while *format.offset(len as isize) != 0x0 {
+		len += 1;
+	}
+	
+	let msg_slice = core::slice::from_raw_parts(format as *const u8, len);
+	
+	crate::tty::write_tty(msg_slice);
+//	unimplemented!()
 }
 
 #[no_mangle]
 pub extern "C" fn AcpiOsVprintf(format: *const c_char, args: *const va_list) {
-	unimplemented!()
+	unsafe {
+		AcpiOsPrintf(format);
+	}
 }
 
 #[no_mangle]
