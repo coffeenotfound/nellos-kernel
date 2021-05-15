@@ -167,12 +167,15 @@ pub extern "C" fn AcpiOsFree(memory: *mut c_void) {
 
 #[no_mangle]
 pub extern "C" fn AcpiOsMapMemory(phys_addr: ACPI_PHYSICAL_ADDRESS, length: ACPI_SIZE) -> *mut c_void {
-	unimplemented!()
+//	unimplemented!()
+	// TODO: THIS IS VERY WRONG AND OBVIOUSLY WRONG REMOVE THIS
+	phys_addr as _
 }
 
 #[no_mangle]
 pub extern "C" fn AcpiOsUnmapMemory(logical_addr: *mut c_void, size: ACPI_SIZE) {
-	unimplemented!()
+//	unimplemented!()
+	// TODO: THIS IS VERY WRONG AND OBVIOUSLY WRONG REMOVE THIS
 }
 
 #[no_mangle]
