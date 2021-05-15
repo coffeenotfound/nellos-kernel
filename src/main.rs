@@ -149,6 +149,9 @@ pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table
 	// DEBUG:
 	stdout.write_str("[[ in kernel before exit boot serives ]]\n").unwrap();
 	
+	// Drop uefi resources before transitioning
+	let stdout = ();
+	
 	// Finally exit boot services
 	let (_status, (rt_table_uefi, mmap_iter)) = sys_table_uefi.exit_boot_services(bootloader_handle_uefi, mmap_buf.as_mut_slice())
 		.unwrap().split();
