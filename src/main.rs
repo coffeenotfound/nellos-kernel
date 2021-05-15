@@ -247,8 +247,44 @@ pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table
 //	// DEBUG:
 //	stdout.write_str("[[ after tty write ]]\n").unwrap();
 	
+	/*
 	// DEBUG:
-	stdout.write_str("[[ after tty write ]]\n").unwrap();
+	unsafe {
+		let width = 80;
+		let height = 24;
+		
+//		tty::write_tty(b"\x1b[?3h");
+//		tty::write_tty(b"\x1b[12l");
+		tty::write_tty_char(b'+');
+		for x in 0..width-2 {
+			tty::write_tty_char(b'-');
+		}
+		tty::write_tty_char(b'+');
+		
+		for y in 0..height-2 {
+			tty::write_tty_char(b'|');
+			
+			for x in 0..width-2 {
+				tty::write_tty_char(b' ');	
+			}
+			
+//			tty::write_tty(b"\x1b[");
+//			let mut num_buf = [0u8; 4];
+//			tty::write_tty(format_unsigned(width-1, 10, &mut num_buf));
+//			tty::write_tty(b"C");
+			
+			tty::write_tty_char(b'|');
+		}
+		
+		tty::write_tty_char(b'+');
+		for x in 0..width-2 {
+			tty::write_tty_char(b'-');
+		}
+		tty::write_tty_char(b'+');
+		
+		tty::write_tty(b"\x1b[");
+	}
+	*/
 	
 	// TODO: MSRs and CRs have to be set up for each processor
 	
