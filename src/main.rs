@@ -755,6 +755,32 @@ pub enum Radix {
 //	}
 //}
 
+pub fn wait_here() {
+	loop {
+		unsafe {
+			asm!("hlt");
+		}
+	}
+}
+
+pub trait PtrOpsExt {
+	unsafe fn byte_offset(self, offset: isize) -> Self;
+}
+impl<T> PtrOpsExt for *const T {
+	unsafe fn byte_offset(self, offset: isize) -> Self {
+		self.cast::<u8>()
+			.offset(offset)
+			.cast()
+	}
+}
+impl<T> PtrOpsExt for *mut T {
+	unsafe fn byte_offset(self, offset: isize) -> Self {
+		self.cast::<u8>()
+			.offset(offset)
+			.cast()
+	}
+}
+
 #[alloc_error_handler]
 fn kernel_alloc_error_handler(_layout: core::alloc::Layout) -> ! {
 	panic!("Unfallible global allocation failed (this is a bug, global allocation is forbidden)")
