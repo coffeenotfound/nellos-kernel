@@ -45,7 +45,8 @@ pub unsafe fn write_tty_ln(msg: &[u8]) {
 	write_tty_nl_only();
 }
 
-pub unsafe fn tty_writer() -> TtyWriter {
+#[inline(always)]
+pub fn tty_writer() -> TtyWriter {
 	TtyWriter
 }
 
