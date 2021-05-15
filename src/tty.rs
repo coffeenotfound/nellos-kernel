@@ -1,5 +1,6 @@
 use crate::arch::x86_64::port::*;
 
+/// COM 1
 const PORT: u16 = 0x3F8;
 
 pub unsafe fn enable_serial_tty() {
