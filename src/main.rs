@@ -93,9 +93,9 @@ pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table
 	
 //	let a = LOW_HEX_FMT_FN as usize;
 //	if (a as *const ()).is_null() {
-//		let _ = stdout.write_str("lowerhex fmt is null");
+//		let _ = stdout.write_str("lowerhex fmt is null\n");
 //	} else {
-//		let _ = stdout.write_str("lowerhex fmt is NOT null");
+//		let _ = stdout.write_str("lowerhex fmt is NOT null\n");
 //	}
 //	
 //	let _ = stdout.write_char(LOW_HEX_FMT_FN as usize as u8 as char);
