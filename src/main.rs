@@ -25,8 +25,8 @@ extern crate alloc;
 extern crate core;
 
 use core::fmt::{LowerHex, Write};
-use core::fmt;
-use core::mem::{ManuallyDrop, MaybeUninit};
+use core::{fmt, ptr};
+use core::mem::{ManuallyDrop, MaybeUninit, size_of, transmute};
 use core::ptr::NonNull;
 use core::sync::atomic::AtomicUsize;
 use core::sync::atomic::Ordering::*;
@@ -41,6 +41,7 @@ use crate::global_alloc::KernelGlobalAlloc;
 use crate::mem::Phys;
 use crate::tty::tty_writer;
 use crate::uefi::boot_alloc::{self, UefiBootAlloc};
+use acpica_sys::{ACPI_TABLE_DESC, AcpiIsFailure, ACPI_TABLE_HEADER, ACPI_TABLE_MADT, ACPI_MADT_PCAT_COMPAT, ACPI_SUBTABLE_HEADER};
 
 pub mod acpi;
 pub mod global_alloc;
@@ -167,21 +168,7 @@ pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table
 //		rt_table_uefi.runtime_services().reset(uefi_rs::table::runtime::ResetType::Shutdown, uefi_rs::Status::SUCCESS, None);
 //  }
 	
-	unsafe {
-		for entry in rt_table_uefi.config_table() {
-//			if entry.guid == RawUefiGuid::new(0x8868e871, 0xe4f1, 0x11d3, [0xbc,0x22,0x00,0x80,0xc7,0x3c,0x88,0x81]).into_uefi_rs() {
-			if entry.guid == uefi_rs::table::cfg::ACPI2_GUID {
-				let acpi_root_ptr = Phys::new(entry.address as *const cty::c_void);
-				
-				acpi::ACPI_ROOT_PTR.store(acpi_root_ptr, SeqCst);
-			}
-		}
-		
-		acpica_sys::AcpiLoadTables();
-//		acpica_sys::AcpiInitializeSubsystem();
-//		acpica_sys::AcpiOsCreateCache(0x0 as _, 0, 0, 0x0 as _);
-	}
-	
+//	for _ in 0..(0x1<<22) {}
 	
 //	// DEBUG:
 //	stdout.write_str("[[ after acpica init ]]\n").unwrap();
@@ -246,6 +233,91 @@ pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table
 		tty::write_tty_nl_only();
 		*/
 	}
+	
+	// Log
+	writeln!(tty_writer(), "After ExitBootServices");
+	
+	unsafe {
+		for entry in rt_table_uefi.config_table() {
+//			if entry.guid == RawUefiGuid::new(0x8868e871, 0xe4f1, 0x11d3, [0xbc,0x22,0x00,0x80,0xc7,0x3c,0x88,0x81]).into_uefi_rs() {
+			if entry.guid == uefi_rs::table::cfg::ACPI2_GUID {
+				let acpi_root_ptr = Phys::new(entry.address as *const cty::c_void);
+				
+				acpi::ACPI_ROOT_PTR.store(acpi_root_ptr, SeqCst);
+			}
+		}
+	}
+	
+	// Do early acpica table manager initialization
+	// This is needed to do our early kernel init and get
+	// virtual memory et al. running.
+	// We later do the full acpica initialization
+	unsafe {
+		let mut tables = [MaybeUninit::<ACPI_TABLE_DESC>::zeroed(); 16];
+		
+		let s = acpica_sys::AcpiInitializeTables(tables.as_mut_ptr() as _, tables.len() as _, acpica_sys::TRUE);
+		if AcpiIsFailure(s) {
+			panic!("Failed to do early acpica table initialization: {}", s);
+		}
+		
+		// DEBUG: Log found table signatures
+		for tab in &tables {
+			let tab = &*tab.as_ptr();
+			
+			if tab.Signature.Integer != 0 {
+				let sig_bytes = tab.Signature.Integer.to_le_bytes();
+				let sig_str = core::str::from_utf8(&sig_bytes).unwrap_or("[XX]");
+				
+				writeln!(tty_writer(), "acpi table: {}", sig_str);
+			}
+		}
+	}
+	
+	// Query MADT info
+	let has_8259_pics: bool;
+	unsafe {
+		// Get MADT table ptr
+		let mut madt_sig = *b"APIC";
+		let mut table_hdr: *mut ACPI_TABLE_HEADER = ptr::null_mut();
+		assert_eq!(acpica_sys::AcpiGetTable(madt_sig.as_mut_ptr() as _, 1, &mut table_hdr as _), 0);
+		
+		let madt = &*(table_hdr as *const ACPI_TABLE_MADT);
+		
+		assert!(&madt.Header.Signature == transmute::<_, &[i8; 4]>(b"APIC"));
+		
+		has_8259_pics = (madt.Flags & ACPI_MADT_PCAT_COMPAT) != 0;
+		
+		writeln!(tty_writer(), "madt lapic base addr: {}", madt.Address);
+		writeln!(tty_writer(), "madt has 8259PICs: {}", has_8259_pics);
+		
+		let mut sub_ptr = (madt as *const _ as usize + 44) as *const ACPI_SUBTABLE_HEADER;
+		
+		while (sub_ptr as usize + size_of::<ACPI_SUBTABLE_HEADER>()) <= (madt as *const _ as usize + madt.Header.Length as usize) {
+			let sub = &*sub_ptr;
+			
+			writeln!(tty_writer(), "madt entry: {}", sub.Type);
+			
+			sub_ptr = sub_ptr.byte_offset(sub.Length as _);
+		}
+		
+		// DEBUG:
+		wait_here();
+	}
+	
+//	// Do full acpica initialization
+//	unsafe {
+//		// Init acpica subsystem
+//		let s = acpica_sys::AcpiInitializeSubsystem();
+//		if acpica_sys::AcpiIsFailure(s) {
+//			panic!("Failed to init acpica subsystem: {}", s);
+//		}
+//		
+//		// Init acpica tables
+//		acpica_sys::AcpiLoadTables();
+//		
+//		// Load acpi tables
+//		acpica_sys
+//	}
 	
 //	// DEBUG:
 //	stdout.write_str("[[ after tty write ]]\n").unwrap();
