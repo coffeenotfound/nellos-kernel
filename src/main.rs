@@ -361,6 +361,9 @@ pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table
 	}
 	*/
 	
+	// Disable interrupts
+	unsafe {cli();}
+	
 	// TODO: MSRs and CRs have to be set up for each processor
 	
 	unsafe {
@@ -461,9 +464,6 @@ pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table
 		}
 		
 		// TODO: Ensure no interrupts occur before or while configuring the GDT, IDT, APIC, etc. else it will probably crash
-		
-		// Disable interrupts
-		cli();
 		
 		// Set up GDT
 		let gdt_desc = PseudoDesc {
@@ -581,19 +581,25 @@ pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table
 		// DEBUG:
 		writeln!(tty_writer(), "spurious reg = 0x{:0x}", ((lapic_base+0xf0) as *const u32).read_volatile());
 		((lapic_base+0xf0) as *mut u32).write_volatile(0x10f);
-		
-		// Reenable interrupts
-		sti();
-		
-		// DEBUG:
+	}
+	
+	// Configure ioapic(s)
+	unsafe {
+		// TODO:
+	}
+	
+	// Reenable interrupts
+	unsafe {sti();}
+	
+	// DEBUG: Test sending local isr
+	unsafe {
 		writeln!(tty_writer(), "requesting interrupt");
 		asm!("int3");
 		writeln!(tty_writer(), "after interrupt");
 	}
 	
 	unsafe {
-		// Configure ioapic(s)
-	}
+		// DEBUG: Jump to usermode
 	}
 	
 	loop {}
