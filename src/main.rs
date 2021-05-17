@@ -394,6 +394,7 @@ pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table
 		
 //		static GDTR_VAL: GdtrPseudoDesc = GdtrPseudoDesc {_pad: [0; 3], limit: 1*core::mem::size_of::<u64>() as u16, base: 0x0};
 		
+		/*
 		{// DEBUG: Dump ovmf gdt and idt
 			// Dump all gdt entries
 			let mut uefi_gdt_desc = PseudoDesc {limit: 0, base: 0};
@@ -410,6 +411,7 @@ pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table
 			
 			writeln!(tty_writer(), "dump #bp idte: +0: {:x}, +8: {:x}", *((uefi_idt_desc.base as usize + 3*16) as *const u64), *((uefi_idt_desc.base as usize + 3*16+8) as *const u64));
 		}
+		*/
 		
 		static mut GDT_BUF: [MaybeUninit<u64>; 7] = MaybeUninit::uninit_array();
 		static mut IDT_BUF: [MaybeUninit<LongIdtDesc>; 256] = MaybeUninit::uninit_array();
