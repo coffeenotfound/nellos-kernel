@@ -287,7 +287,7 @@ pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table
 		
 		has_8259_pics = (madt.Flags & ACPI_MADT_PCAT_COMPAT) != 0;
 		
-		writeln!(tty_writer(), "madt lapic base addr: {}", madt.Address);
+		writeln!(tty_writer(), "madt lapic base addr: {:08x}", madt.Address);
 		writeln!(tty_writer(), "madt has 8259PICs: {}", has_8259_pics);
 		
 		let mut sub_ptr = (madt as *const _ as usize + 44) as *const ACPI_SUBTABLE_HEADER;
