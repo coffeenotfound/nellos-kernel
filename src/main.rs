@@ -26,7 +26,7 @@ extern crate alloc;
 extern crate core;
 
 use core::fmt::{LowerHex, Write};
-use core::{fmt, ptr};
+use core::{fmt, ptr, iter};
 use core::mem::{ManuallyDrop, MaybeUninit, size_of, transmute};
 use core::ptr::NonNull;
 use core::sync::atomic::AtomicUsize;
@@ -40,7 +40,7 @@ use crate::arch::x86_64::isr::{cli, sti};
 use crate::arch::x86_64::msr::Msr;
 use crate::global_alloc::KernelGlobalAlloc;
 use crate::mem::Phys;
-use crate::tty::tty_writer;
+use crate::tty::{tty_writer, read_tty_char};
 use crate::uefi::boot_alloc::{self, UefiBootAlloc};
 use acpica_sys::{ACPI_TABLE_DESC, AcpiIsFailure, ACPI_TABLE_HEADER, ACPI_TABLE_MADT, ACPI_MADT_PCAT_COMPAT, ACPI_SUBTABLE_HEADER, ACPI_MADT_INTERRUPT_SOURCE, ACPI_MADT_INTERRUPT_OVERRIDE, AcpiMadtType_ACPI_MADT_TYPE_INTERRUPT_OVERRIDE, AcpiMadtType_ACPI_MADT_TYPE_IO_APIC, ACPI_MADT_IO_APIC, AcpiMadtType_ACPI_MADT_TYPE_LOCAL_APIC, ACPI_MADT_LOCAL_APIC};
 use core::arch::x86_64::__cpuid;
@@ -798,6 +798,25 @@ fn echo_handler(name: &'_ str) {
 }
 
 fn serial_com13_handler() {
+//	let mut buf = [0u8; 4];
+//	
+//	buf.iter_mut()
+//		.zip(iter::from_fn(|| unsafe {read_tty_char()}))
+//		.for_each(|(slot, char)| *slot = char);
+//	
+//	let _ = writeln!(tty_writer(), "tty >> {}", core::str::from_utf8(&buf).unwrap());
+//	let _ = writeln!(tty_writer(), "tty >> {:?}", &buf);
+	
+	while let Some(c) = unsafe {read_tty_char()} {
+//		let _ = writeln!(tty_writer(), "tty >> {:02X}h", c);
+//		let _ = write!(tty_writer(), "{}", char::from_u32(c).unwrap());
+		let _ = tty_writer().write_char(char::from_u32(c as u32).unwrap());
+	}
+	
+	let iir = unsafe {crate::arch::x86_64::port::inb(0x3F8 + 2)};
+	
+//	let _ = writeln!(tty_writer(), "tty status {:08b}", iir);
+//	for _ in 0..(0x1<<20) {}
 }
 
 #[cfg(target_arch = "aarch64")]

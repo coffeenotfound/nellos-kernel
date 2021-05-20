@@ -69,3 +69,18 @@ impl core::fmt::Write for TtyWriter {
 		Ok(())
 	}
 }
+
+pub unsafe fn read_tty_char() -> Option<u8> {
+	let status = inb(PORT + 5);
+	
+	// Always read the Receive Buffer Register
+	// to clear the interrupt status even
+	// if there's no "valid" data in the buffer
+	let c = inb(PORT);
+	
+	if status & 0x1 == 1 {
+		Some(c)
+	} else {
+		None
+	}
+}
