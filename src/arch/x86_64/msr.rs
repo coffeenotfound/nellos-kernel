@@ -5,6 +5,8 @@ pub const LSTAR: Msr = unsafe {Msr::from_nr(0xC000_0082)};
 pub const CSTAR: Msr = unsafe {Msr::from_nr(0xC000_0083)};
 pub const SFMASK: Msr = unsafe {Msr::from_nr(0xC000_0084)};
 
+pub const IA32_APIC_BASE: Msr = unsafe {Msr::from_nr(0x0000_001b)}; // TODO: Is this the right addr?
+
 pub struct Msr(u32);
 
 impl Msr {
