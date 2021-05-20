@@ -1,6 +1,8 @@
 
+pub type PortAddr = u16;
+
 #[inline(always)]
-pub unsafe fn outb(port: u16, val: u8) {
+pub unsafe fn outb(port: PortAddr, val: u8) {
 	asm!(
 		"out dx, al",
 		in("dx") port,
@@ -10,7 +12,7 @@ pub unsafe fn outb(port: u16, val: u8) {
 }
 
 #[inline(always)]
-pub unsafe fn inb(port: u16) -> u8 {
+pub unsafe fn inb(port: PortAddr) -> u8 {
 	let val;
 	asm!(
 		"in al, dx",
