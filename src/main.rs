@@ -658,7 +658,7 @@ pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table
 		com_entry.set_irq_vector(0x42);
 		
 		io_apic.write_redir(4, com_entry);
-		io_apic.write_redir(3, com_entry);
+//		io_apic.write_redir(3, com_entry);
 	}
 	
 	// Reenable interrupts
