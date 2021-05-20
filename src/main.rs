@@ -9,6 +9,7 @@
 #![feature(naked_functions)]
 #![feature(c_variadic)]
 #![feature(array_chunks)]
+#![feature(const_option)]
 
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(maybe_uninit_uninit_array)]
