@@ -43,6 +43,7 @@ use crate::mem::Phys;
 use crate::tty::tty_writer;
 use crate::uefi::boot_alloc::{self, UefiBootAlloc};
 use acpica_sys::{ACPI_TABLE_DESC, AcpiIsFailure, ACPI_TABLE_HEADER, ACPI_TABLE_MADT, ACPI_MADT_PCAT_COMPAT, ACPI_SUBTABLE_HEADER, ACPI_MADT_INTERRUPT_SOURCE, ACPI_MADT_INTERRUPT_OVERRIDE, AcpiMadtType_ACPI_MADT_TYPE_INTERRUPT_OVERRIDE, AcpiMadtType_ACPI_MADT_TYPE_IO_APIC, ACPI_MADT_IO_APIC, AcpiMadtType_ACPI_MADT_TYPE_LOCAL_APIC, ACPI_MADT_LOCAL_APIC};
+use core::arch::x86_64::__cpuid;
 
 pub mod acpi;
 pub mod global_alloc;
@@ -592,13 +593,30 @@ pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table
 		writeln!(tty_writer(), "new CS {:04x}h", new_cs);
 	}
 	
+	// TODO: lapics need to be configured on each cpu itself
+	//  But do we send IPIs thought without having configured interrupts??
+	// Configure processor local lapic
 	unsafe {
 		use arch::x86_64::msr::*;
+		
+		// Note that only x2APIC is configured through MSRs,
+		// APIC is done through a 4 KiB mmio region starting
+		// at the address specified by the IA32_APIC_BASE MSR
+		// Right now we just assume x2APIC because I'm lazy
+		
+		// Note that x2APIC mode is disabled by default
+		// and right now we don't enable it, so we only use
+		// normal APIC mode
 		
 		let apic_base_msr = Msr::from_nr(0x0000_001b);
 		let apic_base_msr_val = apic_base_msr.read();
 		
 		let lapic_base = apic_base_msr_val & 0xf_ffff_ffff_f000;
+		
+		// DEBUG: Check x2APIC support
+		let feature_cpuid = __cpuid(1);
+		
+		writeln!(tty_writer(), "Supports x2APIC: {}", feature_cpuid.ecx & (0x1 << 21) != 0);
 		
 		// Log
 		writeln!(tty_writer(), "apic_base_msr = {:08x} (ABA {:x}, AE {:b}, BSC {:b})",
@@ -610,9 +628,12 @@ pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table
 		
 		writeln!(tty_writer(), "lapic id = 0x{:x}, lapic ver = 0x{:x}", ((lapic_base+0x20) as *const u32).read_volatile(), ((lapic_base+0x30) as *const u32).read_volatile());
 		
+		// Enable lapic
 		// DEBUG:
 		writeln!(tty_writer(), "spurious reg = 0x{:0x}", ((lapic_base+0xf0) as *const u32).read_volatile());
-		((lapic_base+0xf0) as *mut u32).write_volatile(0x10f);
+		
+		let spurious_isr_nr: u8 = 0xff; // Map spurious apic isr to #255
+		((lapic_base+0xf0) as *mut u32).write_volatile(0x100 | (spurious_isr_nr & 0xff) as u32);
 	}
 	
 	// Configure ioapic(s)
