@@ -42,7 +42,7 @@ use crate::global_alloc::KernelGlobalAlloc;
 use crate::mem::Phys;
 use crate::tty::tty_writer;
 use crate::uefi::boot_alloc::{self, UefiBootAlloc};
-use acpica_sys::{ACPI_TABLE_DESC, AcpiIsFailure, ACPI_TABLE_HEADER, ACPI_TABLE_MADT, ACPI_MADT_PCAT_COMPAT, ACPI_SUBTABLE_HEADER};
+use acpica_sys::{ACPI_TABLE_DESC, AcpiIsFailure, ACPI_TABLE_HEADER, ACPI_TABLE_MADT, ACPI_MADT_PCAT_COMPAT, ACPI_SUBTABLE_HEADER, ACPI_MADT_INTERRUPT_SOURCE, ACPI_MADT_INTERRUPT_OVERRIDE, AcpiMadtType_ACPI_MADT_TYPE_INTERRUPT_OVERRIDE, AcpiMadtType_ACPI_MADT_TYPE_IO_APIC, ACPI_MADT_IO_APIC, AcpiMadtType_ACPI_MADT_TYPE_LOCAL_APIC, ACPI_MADT_LOCAL_APIC};
 
 pub mod acpi;
 pub mod global_alloc;
@@ -276,6 +276,8 @@ pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table
 	
 	// Query MADT info
 	let has_8259_pics: bool;
+	let mut first_io_apic = MaybeUninit::<IoApicDesc>::zeroed();
+	let mut io_apic_order = 0;
 	unsafe {
 		// Get MADT table ptr
 		let mut madt_sig = *b"APIC";
@@ -298,11 +300,38 @@ pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table
 			
 			writeln!(tty_writer(), "madt entry: {}", sub.Type);
 			
+			if sub.Type as u32 == AcpiMadtType_ACPI_MADT_TYPE_LOCAL_APIC {
+				let lapic_tab = &*(sub_ptr as *const ACPI_MADT_LOCAL_APIC);
+				
+				writeln!(tty_writer(), "  processor _UID {} -> local apic id {}", lapic_tab.ProcessorId, lapic_tab.Id);
+			}
+			
+			if sub.Type as u32 == AcpiMadtType_ACPI_MADT_TYPE_INTERRUPT_OVERRIDE {
+				let irq_override_tab = &*(sub_ptr as *const ACPI_MADT_INTERRUPT_OVERRIDE);
+				writeln!(tty_writer(), "  source override: ISA #{} -> IOAPIC (GSI) #{}", irq_override_tab.SourceIrq, irq_override_tab.GlobalIrq);
+			}
+			
+			if sub.Type as u32 == AcpiMadtType_ACPI_MADT_TYPE_IO_APIC {
+				let io_apic_tab = &*(sub_ptr as *const ACPI_MADT_IO_APIC);
+				
+				if io_apic_order == 0 {
+					first_io_apic.write(IoApicDesc {
+						order: io_apic_order,
+						id: io_apic_tab.Id,
+						regs: Phys(io_apic_tab.Address as usize as *mut u128),
+						base_gsi: io_apic_tab.GlobalIrqBase,
+					});
+				}
+				
+				io_apic_order += 1;
+			}
+			
 			sub_ptr = sub_ptr.byte_offset(sub.Length as _);
 		}
+//		let first_io_apic = first_io_apic.assume_init();
 		
-		// DEBUG:
-		wait_here();
+//		// DEBUG:
+//		wait_here();
 	}
 	
 //	// Do full acpica initialization
