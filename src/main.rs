@@ -44,6 +44,7 @@ use crate::tty::tty_writer;
 use crate::uefi::boot_alloc::{self, UefiBootAlloc};
 use acpica_sys::{ACPI_TABLE_DESC, AcpiIsFailure, ACPI_TABLE_HEADER, ACPI_TABLE_MADT, ACPI_MADT_PCAT_COMPAT, ACPI_SUBTABLE_HEADER, ACPI_MADT_INTERRUPT_SOURCE, ACPI_MADT_INTERRUPT_OVERRIDE, AcpiMadtType_ACPI_MADT_TYPE_INTERRUPT_OVERRIDE, AcpiMadtType_ACPI_MADT_TYPE_IO_APIC, ACPI_MADT_IO_APIC, AcpiMadtType_ACPI_MADT_TYPE_LOCAL_APIC, ACPI_MADT_LOCAL_APIC};
 use core::arch::x86_64::__cpuid;
+use crate::arch::x86_64::ioapic::{IoApicDesc, IoApicRedTblVal, TriggerMode, IrqPolarity, DestinationMode, DeliveryMode};
 
 pub mod acpi;
 pub mod global_alloc;
@@ -396,7 +397,6 @@ pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table
 	unsafe {cli();}
 	
 	// TODO: MSRs and CRs have to be set up for each processor
-	
 	unsafe {
 		use arch::x86_64::msr::*;
 		
@@ -491,6 +491,7 @@ pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table
 				0x08 => isr_df as u64,
 				0x0c => isr_ss as u64,
 				0x0d => isr_gp as u64,
+				0x42 => isr_serial_com13 as u64,
 				_ => isr_any as u64,
 			};
 			IDT_BUF[i].write(LongIdtDesc::new(isr, gdt_code_selector, 0, 0b1110, 0x0, 1));
@@ -638,7 +639,21 @@ pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table
 	
 	// Configure ioapic(s)
 	unsafe {
-		// TODO:
+		let io_apic = first_io_apic.assume_init();
+		
+		// TODO: use set_full_dest()
+		// https://wiki.osdev.org/IOAPIC#IOREDTBL
+		let mut com_entry = IoApicRedTblVal(0);
+		com_entry.set_dest_field(0); // physical dest: apic 0
+		com_entry.set_interrupt_mask(false);
+		com_entry.set_trigger_mode(TriggerMode::EdgeSensitive);
+		com_entry.set_polarity(IrqPolarity::ActiveHigh);
+		com_entry.set_dest_mode(DestinationMode::Physical);
+		com_entry.set_delv_mode(DeliveryMode::Fixed);
+		com_entry.set_irq_vector(0x42);
+		
+		io_apic.write_redir(4, com_entry);
+		io_apic.write_redir(3, com_entry);
 	}
 	
 	// Reenable interrupts
@@ -767,6 +782,8 @@ adhoc_isr!(isr_bp => "#bp", false);
 adhoc_isr!(isr_df => "#df", false);
 adhoc_isr!(isr_ss => "#ss", false);
 adhoc_isr!(isr_gp => "#gp", true);
+
+adhoc_isr!(isr_serial_com13 => "tty", false);
 
 #[cfg(target_arch = "aarch64")]
 #[no_mangle]
