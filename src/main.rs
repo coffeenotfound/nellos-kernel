@@ -25,8 +25,9 @@
 extern crate alloc;
 extern crate core;
 
+use core::{fmt, iter, ptr};
+use core::arch::x86_64::__cpuid;
 use core::fmt::{LowerHex, Write};
-use core::{fmt, ptr, iter};
 use core::mem::{ManuallyDrop, MaybeUninit, size_of, transmute};
 use core::ptr::NonNull;
 use core::sync::atomic::AtomicUsize;
@@ -35,16 +36,16 @@ use core::sync::atomic::Ordering::*;
 use fallo::FallVec;
 use uefi_rs::ResultExt;
 
+use acpica_sys::{ACPI_MADT_INTERRUPT_OVERRIDE, ACPI_MADT_INTERRUPT_SOURCE, ACPI_MADT_IO_APIC, ACPI_MADT_LOCAL_APIC, ACPI_MADT_PCAT_COMPAT, ACPI_SUBTABLE_HEADER, ACPI_TABLE_DESC, ACPI_TABLE_HEADER, ACPI_TABLE_MADT, AcpiIsFailure, AcpiMadtType_ACPI_MADT_TYPE_INTERRUPT_OVERRIDE, AcpiMadtType_ACPI_MADT_TYPE_IO_APIC, AcpiMadtType_ACPI_MADT_TYPE_LOCAL_APIC};
+
 use crate::arch::x86_64::desctable::{LongCodeDataSegmentDesc, LongIdtDesc, LongNullSegmentDesc, LongSystemSegmentDesc, PseudoDesc, SegmentSelector};
+use crate::arch::x86_64::ioapic::{DeliveryMode, DestinationMode, IoApicDesc, IoApicRedTblVal, IrqPolarity, TriggerMode};
 use crate::arch::x86_64::isr::{cli, sti};
 use crate::arch::x86_64::msr::Msr;
 use crate::global_alloc::KernelGlobalAlloc;
 use crate::mem::Phys;
-use crate::tty::{tty_writer, read_tty_char};
+use crate::tty::{read_tty_char, tty_writer};
 use crate::uefi::boot_alloc::{self, UefiBootAlloc};
-use acpica_sys::{ACPI_TABLE_DESC, AcpiIsFailure, ACPI_TABLE_HEADER, ACPI_TABLE_MADT, ACPI_MADT_PCAT_COMPAT, ACPI_SUBTABLE_HEADER, ACPI_MADT_INTERRUPT_SOURCE, ACPI_MADT_INTERRUPT_OVERRIDE, AcpiMadtType_ACPI_MADT_TYPE_INTERRUPT_OVERRIDE, AcpiMadtType_ACPI_MADT_TYPE_IO_APIC, ACPI_MADT_IO_APIC, AcpiMadtType_ACPI_MADT_TYPE_LOCAL_APIC, ACPI_MADT_LOCAL_APIC};
-use core::arch::x86_64::__cpuid;
-use crate::arch::x86_64::ioapic::{IoApicDesc, IoApicRedTblVal, TriggerMode, IrqPolarity, DestinationMode, DeliveryMode};
 
 pub mod acpi;
 pub mod global_alloc;
