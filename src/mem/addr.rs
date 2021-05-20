@@ -2,10 +2,10 @@ use core::ptr::NonNull;
 
 #[deprecated(note = "Use normal pointers/references instead which are implicitely assumed to be in the virtual memory map of the kernel.")]
 #[repr(transparent)]
-pub struct Virt<A: Addr>(A);
+pub struct Virt<A: Addr>(pub A);
 
 #[repr(transparent)]
-pub struct Phys<A: Addr>(A);
+pub struct Phys<A: Addr>(pub A);
 
 impl<A: Addr> Phys<A> {
 	pub const fn new(raw: A) -> Self {
