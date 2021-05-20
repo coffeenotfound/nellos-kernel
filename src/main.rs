@@ -594,6 +594,11 @@ pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table
 		writeln!(tty_writer(), "new CS {:04x}h", new_cs);
 	}
 	
+	// Disable pic
+	unsafe {
+		// Actually this is probably already done by the uefi firmware
+	}
+	
 	// TODO: lapics need to be configured on each cpu itself
 	//  But do we send IPIs thought without having configured interrupts??
 	// Configure processor local lapic
