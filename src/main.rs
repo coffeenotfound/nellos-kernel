@@ -713,10 +713,10 @@ pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table
 ////	for _ in 0..usize::MAX {}
 //}
 
-macro_rules! adhoc_isr {
-	($name:ident => $id:expr, $ec:tt) => {
+macro_rules! isr_entry {
+	($entry:ident => $handler_call:expr; $ec:tt) => {
 		#[naked]
-		pub unsafe extern "C" fn $name() {
+		pub unsafe extern "C" fn $entry() {
 			asm!(
 				// Save sysv64 caller-saved registers
 				"sub rsp, 72",
@@ -744,7 +744,7 @@ macro_rules! adhoc_isr {
 				"mov r10, [rsp+56]",
 				"mov r11, [rsp+64]",
 				"add rsp, 72",
-				adhoc_isr!(@poperrcode; $ec),
+				isr_entry!(@poperrcode; $ec),
 				
 				"iretq",
 				
@@ -757,7 +757,7 @@ macro_rules! adhoc_isr {
 				let lapic_base = Msr::from_nr(0x0000_001b).read() & 0xf_ffff_ffff_f000;
 				((lapic_base+0xb0) as *mut u32).write_volatile(0x00);
 				
-				let _ = writeln!(tty_writer(), "> IN ISR: {}", $id);
+//				let _ = writeln!(tty_writer(), "> IN ISR: {}", $id);
 				if $ec {
 					let errcode: usize;
 					let rip: usize;
@@ -771,8 +771,11 @@ macro_rules! adhoc_isr {
 					);
 					asm!("mov {:r}, qword ptr [rsp]", out(reg) rip);
 					
-					let _ = writeln!(tty_writer(), "errcode {:x}, rip {:08x}", errcode, rip);
+//					let _ = writeln!(tty_writer(), "errcode {:x}, rip {:08x}", errcode, rip);
 				}
+				
+				// Call handler
+				$handler_call;
 				
 //				for _ in 0..(0x1<<20) {}
 			}
@@ -782,13 +785,20 @@ macro_rules! adhoc_isr {
 	(@poperrcode; false) => ("");
 }
 
-adhoc_isr!(isr_any => "#any", false);
-adhoc_isr!(isr_bp => "#bp", false);
-adhoc_isr!(isr_df => "#df", false);
-adhoc_isr!(isr_ss => "#ss", false);
-adhoc_isr!(isr_gp => "#gp", true);
+isr_entry!(isr_any => echo_handler("#any"); false);
+isr_entry!(isr_bp => echo_handler("#bp"); false);
+isr_entry!(isr_df => echo_handler("#df"); false);
+isr_entry!(isr_ss => echo_handler("#ss"); false);
+isr_entry!(isr_gp => echo_handler("#gp"); true);
 
-adhoc_isr!(isr_serial_com13 => "tty", false);
+isr_entry!(isr_serial_com13 => serial_com13_handler(); false);
+
+fn echo_handler(name: &'_ str) {
+	let _ = writeln!(tty_writer(), "> IN ISR: {}", name);
+}
+
+fn serial_com13_handler() {
+}
 
 #[cfg(target_arch = "aarch64")]
 #[no_mangle]
