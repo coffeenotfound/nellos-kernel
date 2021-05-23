@@ -760,14 +760,14 @@ macro_rules! isr_entry {
 				
 //				let _ = writeln!(tty_writer(), "> IN ISR: {}", $id);
 				if $ec {
-					let errcode: usize;
+					let _errcode: usize;
 					let rip: usize;
 					asm!(
 						"pop {temp:r}", // Pop frame return rip
 						"pop {errcode:r}", // Pop error code
 						"push {temp:r}", // Re-push frame retur rip
 						
-						errcode = out(reg) errcode,
+						errcode = out(reg) _errcode,
 						temp = out(reg) _,
 					);
 					asm!("mov {:r}, qword ptr [rsp]", out(reg) rip);
