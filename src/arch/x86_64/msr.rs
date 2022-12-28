@@ -1,17 +1,18 @@
+use core::arch::asm;
 
-pub const EFER: Msr = unsafe {Msr::from_nr(0xC000_0080)};
-pub const STAR: Msr = unsafe {Msr::from_nr(0xC000_0081)};
-pub const LSTAR: Msr = unsafe {Msr::from_nr(0xC000_0082)};
-pub const CSTAR: Msr = unsafe {Msr::from_nr(0xC000_0083)};
-pub const SFMASK: Msr = unsafe {Msr::from_nr(0xC000_0084)};
+pub const EFER: Msr = Msr::from_nr(0xC000_0080);
+pub const STAR: Msr = Msr::from_nr(0xC000_0081);
+pub const LSTAR: Msr = Msr::from_nr(0xC000_0082);
+pub const CSTAR: Msr = Msr::from_nr(0xC000_0083);
+pub const SFMASK: Msr = Msr::from_nr(0xC000_0084);
 
-pub const IA32_APIC_BASE: Msr = unsafe {Msr::from_nr(0x0000_001b)}; // TODO: Is this the right addr?
+pub const IA32_APIC_BASE: Msr = Msr::from_nr(0x0000_001b); // TODO: Is this the right addr?
 
 pub struct Msr(u32);
 
 impl Msr {
 	#[inline(always)]
-	pub const unsafe fn from_nr(nr: u32) -> Self {
+	pub const fn from_nr(nr: u32) -> Self {
 		Self(nr)
 	}
 	

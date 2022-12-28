@@ -17,10 +17,11 @@ prebootlib = {path = "../libs/prebootlib/"}
 acpica_sys = {path = "../libs/acpica_sys/"}
 fallo = {path = "../../fallo/"}
 atomic = "0.5.0"
-uefi_rs = {package = "uefi", version = "0.7.0", default-features = false, features = []}
+uefi_rs = {package = "uefi", version = "0.18.0", default-features = false, features = []}
 cfg-if = "1.0.0"
 cty = "0.2.1"
 byteorder = {version = "1.4.2", default-features = false}
 numtoa = "0.2.3"
 bitfield = "0.13.2"
+#zydis = "3.1.1"
 static_assertions = "1.1.0"

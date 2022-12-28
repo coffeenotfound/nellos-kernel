@@ -6,7 +6,8 @@
 // USCI unpriveleged syscall interface
 // PSCI priveleged -"-
 
-#[inline(never)]
+use core::arch::asm;
+
 #[naked]
 pub unsafe extern "C" fn syscall_handler_long() {
 	asm!(
@@ -15,7 +16,6 @@ pub unsafe extern "C" fn syscall_handler_long() {
 	);
 }
 
-#[inline(never)]
 #[naked]
 pub unsafe extern "C" fn syscall_handler_compat() {
 	asm!(

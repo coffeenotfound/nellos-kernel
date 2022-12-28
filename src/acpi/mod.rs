@@ -1,10 +1,9 @@
+use core::ptr;
 use core::ptr::NonNull;
 use core::sync::atomic::AtomicUsize;
 
 use atomic::Atomic;
 use static_assertions::*;
-
-use core::ptr;
 
 use crate::mem::Phys;
 

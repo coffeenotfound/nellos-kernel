@@ -68,7 +68,7 @@ mod table {
 	use core::ffi::c_void;
 	
 	use uefi_rs::{Event, Guid, Handle, Status};
-	use uefi_rs::proto::loaded_image::DevicePath;
+	use uefi_rs::proto::device_path::FfiDevicePath;
 	use uefi_rs::table::boot::{EventType, MemoryDescriptor, MemoryMapKey, MemoryType, Tpl};
 	use uefi_rs::table::Header;
 	
@@ -132,7 +132,7 @@ mod table {
 		) -> Status,
 		pub locate_device_path: unsafe extern "efiapi" fn(
 			proto: &Guid,
-			device_path: &mut *mut DevicePath,
+			device_path: &mut FfiDevicePath,
 			out_handle: *mut Handle,
 		) -> Status,
 		pub install_configuration_table: usize,

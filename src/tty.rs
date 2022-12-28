@@ -1,3 +1,4 @@
+use core::arch::asm;
 use crate::arch::x86_64::port::*;
 
 // https://wiki.osdev.org/Serial_Ports#Programming_the_Serial_Communications_Port

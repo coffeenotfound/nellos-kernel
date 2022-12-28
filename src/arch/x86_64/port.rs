@@ -1,3 +1,4 @@
+use core::arch::asm;
 
 pub type PortAddr = u16;
 

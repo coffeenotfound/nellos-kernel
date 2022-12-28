@@ -4,7 +4,6 @@
 #![feature(lang_items)]
 #![feature(alloc_error_handler)]
 #![feature(asm)]
-#![feature(const_fn)]
 #![feature(abi_efiapi)]
 #![feature(naked_functions)]
 #![feature(c_variadic)]
@@ -15,17 +14,23 @@
 #![feature(maybe_uninit_uninit_array)]
 #![feature(maybe_uninit_extra)]
 #![feature(maybe_uninit_slice)]
+#![feature(asm_sym)]
+#![feature(const_maybe_uninit_uninit_array)]
 
 // DEBUG:
 #![feature(fmt_as_str)]
 #![feature(panic_info_message)]
 #![feature(fmt_internals)]
 #![feature(core_panic)]
+#![feature(pointer_byte_offsets)]
+
+#![warn(named_asm_labels)]
 
 extern crate alloc;
 extern crate core;
 
 use core::{fmt, iter, ptr};
+use core::arch::asm;
 use core::arch::x86_64::__cpuid;
 use core::fmt::{LowerHex, Write};
 use core::mem::{ManuallyDrop, MaybeUninit, size_of, transmute};
@@ -56,6 +61,7 @@ pub mod syscall;
 pub mod arch;
 pub mod vga;
 pub mod tty;
+pub mod dis;
 
 #[global_allocator]
 static KERNEL_GLOBAL_ALLOC: KernelGlobalAlloc = KernelGlobalAlloc::new();
@@ -69,7 +75,7 @@ pub static LOW_HEX_FMT_FN: fn(&usize, &mut core::fmt::Formatter<'_>) -> core::fm
 //#[deprecated(note = "Don't use! Only here to force the linker to keep other exported functions in the binary.")]
 #[cfg(target_arch = "x86_64")]
 #[no_mangle]
-pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table_uefi: uefi_rs::prelude::SystemTable<uefi_rs::table::Boot>) -> ! {
+pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, mut sys_table_uefi: uefi_rs::prelude::SystemTable<uefi_rs::table::Boot>) -> ! {
 	// DEBUG: Print
 	let stdout = sys_table_uefi.stdout();
 	let _ = stdout.set_color(uefi_rs::proto::console::text::Color::LightGreen, uefi_rs::proto::console::text::Color::Black).unwrap();
@@ -84,7 +90,7 @@ pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table
 //			GLOBAL_UEFI_STDOUT_PTR.store(mem::transmute(stdout), SeqCst)
 //		}
 //	})(stdout);
-	GLOBAL_UEFI_STDOUT_PTR.store(stdout as *mut uefi_rs::proto::console::text::Output as usize, SeqCst);
+	GLOBAL_UEFI_STDOUT_PTR.store(sys_table_uefi.stdout() as *mut uefi_rs::proto::console::text::Output as usize, SeqCst);
 	
 //	let a = [65u8; 128];
 //	unsafe {
@@ -130,13 +136,15 @@ pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table
 //	writeln!(stdout, "{}", 3);
 	
 	// DEBUG:
+	let stdout = sys_table_uefi.stdout();
 	stdout.write_str("[[ inited boot alloc ]]\n").unwrap();
 	
 	// Alloc buffer for uefi memory map
 	let mmap_size = sys_table_uefi.boot_services().memory_map_size();
-	let mut mmap_buf = FallVec::<u8, UefiBootAlloc>::with_len_zeroed(mmap_size + 128).unwrap();
+	let mut mmap_buf = FallVec::<u8, UefiBootAlloc>::with_len_zeroed(mmap_size.map_size + 128).unwrap();
 	
 	// DEBUG:
+	let stdout = sys_table_uefi.stdout();
 	stdout.write_str("[[ alloc'ed mmap buffer ]]\n").unwrap();
 	
 	// Retrieve uefi memory map
@@ -144,6 +152,7 @@ pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table
 		.memory_map(mmap_buf.as_mut_slice());
 	
 	// DEBUG:
+	let stdout = sys_table_uefi.stdout();
 	stdout.write_str("[[ retrieved mmap ]]\n").unwrap();
 	
 	// Deinit the uefi boot allocator
@@ -152,14 +161,16 @@ pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table
 	}
 	
 	// DEBUG:
+	let stdout = sys_table_uefi.stdout();
 	stdout.write_str("[[ in kernel before exit boot serives ]]\n").unwrap();
 	
 	// Drop uefi resources before transitioning
 	let stdout = ();
 	
 	// Finally exit boot services
-	let (_status, (rt_table_uefi, mmap_iter)) = sys_table_uefi.exit_boot_services(bootloader_handle_uefi, mmap_buf.as_mut_slice())
-		.unwrap().split();
+	let (rt_table_uefi, mmap_iter) = sys_table_uefi
+		.exit_boot_services(bootloader_handle_uefi, mmap_buf.as_mut_slice())
+		.unwrap();
 	
 //	for mem_desc in mmap_iter {
 //		let mem_desc: &uefi_rs::table::boot::MemoryDescriptor = mem_desc;
@@ -293,7 +304,7 @@ pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table
 		
 		has_8259_pics = (madt.Flags & ACPI_MADT_PCAT_COMPAT) != 0;
 		
-		writeln!(tty_writer(), "madt lapic base addr: {:08x}", madt.Address);
+		writeln!(tty_writer(), "madt lapic base addr: {:08x}", madt.Address as u32);
 		writeln!(tty_writer(), "madt has 8259PICs: {}", has_8259_pics);
 		
 		let mut sub_ptr = (madt as *const _ as usize + 44) as *const ACPI_SUBTABLE_HEADER;
@@ -311,7 +322,7 @@ pub extern "sysv64" fn _start(bootloader_handle_uefi: uefi_rs::Handle, sys_table
 			
 			if sub.Type as u32 == AcpiMadtType_ACPI_MADT_TYPE_INTERRUPT_OVERRIDE {
 				let irq_override_tab = &*(sub_ptr as *const ACPI_MADT_INTERRUPT_OVERRIDE);
-				writeln!(tty_writer(), "  source override: ISA #{} -> IOAPIC (GSI) #{}", irq_override_tab.SourceIrq, irq_override_tab.GlobalIrq);
+				writeln!(tty_writer(), "  source override: ISA #{} -> IOAPIC (GSI) #{}", irq_override_tab.SourceIrq, irq_override_tab.GlobalIrq as u32);
 			}
 			
 			if sub.Type as u32 == AcpiMadtType_ACPI_MADT_TYPE_IO_APIC {
@@ -835,6 +846,10 @@ pub extern "C" fn _start() {
 //fn start_aarch64_uefi() -> ! {
 //	unimplemented!()
 //}
+
+extern "C" fn in_usermode() -> ! {
+	loop {}
+}
 
 #[panic_handler]
 #[no_mangle]

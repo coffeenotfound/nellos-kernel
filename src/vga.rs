@@ -30,6 +30,7 @@ const VGA_NUM_SEQ_REGS: u16 = 5;
 const VGA_NUM_CRTC_REGS: u16 = 25;
 const VGA_NUM_GC_REGS: u16 = 9;
 const VGA_NUM_AC_REGS: u16 = 21;
+#[allow(unused_parens)]
 const VGA_NUM_REGS: u16 = (1 + VGA_NUM_SEQ_REGS + VGA_NUM_CRTC_REGS
 	+ VGA_NUM_GC_REGS + VGA_NUM_AC_REGS);
 
