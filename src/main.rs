@@ -77,6 +77,26 @@ pub static LOW_HEX_FMT_FN: fn(&usize, &mut core::fmt::Formatter<'_>) -> core::fm
 #[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub extern "sysv64" fn start0(bootloader_handle_uefi: uefi_rs::Handle, mut sys_table_uefi: uefi_rs::prelude::SystemTable<uefi_rs::table::Boot>) -> ! {
+	// Init the kernel on the bootstrap processor
+	// TODO: Init and start all other APs
+	init_kernel(bootloader_handle_uefi, sys_table_uefi);
+	
+	// DEBUG: Test jump to usermode
+	unsafe {
+		// Use SYSCALL/SYSRET instead of SYSENTER/SYSEXIT
+		
+		// Actually jump to userspace
+		// Note: This asm block is `noreturn` which means no variables of
+		//  the current kernel stack will be dropped if they are still in scope!
+		return asm!(
+			// TODO: Ensure we have a rex prefix, without it we would enter compat mode
+			"sysret",
+			options(noreturn),
+		);
+	}
+}
+
+fn init_kernel(bootloader_handle_uefi: uefi_rs::Handle, mut sys_table_uefi: uefi_rs::prelude::SystemTable<uefi_rs::table::Boot>) {
 	// DEBUG: Print
 	let stdout = sys_table_uefi.stdout();
 	let _ = stdout.set_color(uefi_rs::proto::console::text::Color::LightGreen, uefi_rs::proto::console::text::Color::Black).unwrap();
@@ -406,6 +426,9 @@ pub extern "sysv64" fn start0(bootloader_handle_uefi: uefi_rs::Handle, mut sys_t
 	}
 	*/
 	
+	// Set up paging
+	// Note: UEFI already sets up 
+	
 	// Disable interrupts
 	unsafe {cli();}
 	
@@ -424,10 +447,12 @@ pub extern "sysv64" fn start0(bootloader_handle_uefi: uefi_rs::Handle, mut sys_t
 		EFER.write(efer_val);
 		
 		// Set up x86 SYSCALL MSRs
-		STAR.write(0x0); // Clear bits, protected mode explicitely unsupported
-		LSTAR.write(syscall::syscall_handler_long as u64);
-		CSTAR.write(syscall::syscall_handler_compat as u64);
-		SFMASK.write(0x0); // TODO: ?? No clue what flags we should mask
+		// TODO: Even for long mode the CS and SS are loaded from STAR, need to set them!
+		STAR.write(0x0); // Clear bits, we explicitely don't support legacy protected mode
+		CSTAR.write(0x0); // Clear bits, we explicitely don't support compat mode
+		LSTAR.write(syscall::syscall_entry_long0 as u64); // Setup long mode syscall handler routine
+		const RFLAGS_IF: u64 = 0x0200;
+		SFMASK.write(RFLAGS_IF | 0); // Clear IF on syscall, disabling irqs 
 		
 //		#[repr(C)]
 //		struct GdtrPseudoDesc {
@@ -487,6 +512,8 @@ pub extern "sysv64" fn start0(bootloader_handle_uefi: uefi_rs::Handle, mut sys_t
 		}
 		
 		// Construct GDT
+		// TODO: Put LongNullSegmentDesc et al into a union so we
+		//  can make GDT_BUF have a proper type instead of raw u64
 		let gdt_ptr = GDT_BUF.as_mut_ptr();
 		(gdt_ptr as *mut LongNullSegmentDesc).write(LongNullSegmentDesc::new());
 		(gdt_ptr.offset(1) as *mut LongCodeDataSegmentDesc).write(LongCodeDataSegmentDesc::new_code(0, 1, 1, 0x0, 0)); // Kernel Code Segment
@@ -505,7 +532,7 @@ pub extern "sysv64" fn start0(bootloader_handle_uefi: uefi_rs::Handle, mut sys_t
 				0x0c => isr_ss as u64,
 				0x0d => isr_gp as u64,
 				0x42 => isr_serial_com13 as u64,
-				_ => isr_any as u64,
+				_ => isr_other as u64,
 			};
 			IDT_BUF[i].write(LongIdtDesc::new(isr, gdt_code_selector, 0, 0b1110, 0x0, 1));
 		}
@@ -683,12 +710,6 @@ pub extern "sysv64" fn start0(bootloader_handle_uefi: uefi_rs::Handle, mut sys_t
 		asm!("int3");
 		writeln!(tty_writer(), "after interrupt");
 	}
-	
-	unsafe {
-		// DEBUG: Jump to usermode
-	}
-	
-	loop {}
 }
 
 //#[naked]
@@ -733,13 +754,13 @@ macro_rules! isr_entry {
 			asm!(
 				// Save sysv64 caller-saved registers
 				"sub rsp, 72",
-				"mov [rsp], rax",
-				"mov [rsp+8], rcx",
+				"mov [rsp+ 0], rax",
+				"mov [rsp+ 8], rcx",
 				"mov [rsp+16], rdx",
 				"mov [rsp+24], rsi",
 				"mov [rsp+32], rdi",
-				"mov [rsp+40], r8",
-				"mov [rsp+48], r9",
+				"mov [rsp+40],  r8",
+				"mov [rsp+48],  r9",
 				"mov [rsp+56], r10",
 				"mov [rsp+64], r11",
 				
@@ -747,13 +768,13 @@ macro_rules! isr_entry {
 				"call {inner}",
 				
 				// Restore saved registers
-				"mov rax, [rsp]",
-				"mov rcx, [rsp+8]",
+				"mov rax, [rsp+ 0]",
+				"mov rcx, [rsp+ 8]",
 				"mov rdx, [rsp+16]",
 				"mov rsi, [rsp+24]",
 				"mov rdi, [rsp+32]",
-				"mov r8, [rsp+40]",
-				"mov r9, [rsp+48]",
+				"mov  r8, [rsp+40]",
+				"mov  r9, [rsp+48]",
 				"mov r10, [rsp+56]",
 				"mov r11, [rsp+64]",
 				"add rsp, 72",
@@ -798,7 +819,7 @@ macro_rules! isr_entry {
 	(@poperrcode; false) => ("");
 }
 
-isr_entry!(isr_any => echo_handler("#any"); false);
+isr_entry!(isr_other => echo_handler("#<other>"); false);
 isr_entry!(isr_bp => echo_handler("#bp"); false);
 isr_entry!(isr_df => echo_handler("#df"); false);
 isr_entry!(isr_ss => echo_handler("#ss"); false);
@@ -836,20 +857,6 @@ fn serial_com13_handler() {
 #[no_mangle]
 pub extern "C" fn _start() {
 	unimplemented!();
-}
-
-//#[cfg(target_arch = "x86_64")]
-//fn start_x86_64_uefi() -> ! {
-//	loop {}
-//}
-
-//#[cfg(target_arch = "aarch64")]
-//fn start_aarch64_uefi() -> ! {
-//	unimplemented!()
-//}
-
-extern "C" fn in_usermode() -> ! {
-	loop {}
 }
 
 #[panic_handler]
@@ -1032,6 +1039,8 @@ impl core::fmt::Display for A {
 	}
 }
 
+/// Statically ensures the start0 function signature doesn't
+/// get out of whack
 mod type_check {
 	use prebootlib::KernelEntryFn;
 	
