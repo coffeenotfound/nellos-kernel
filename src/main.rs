@@ -44,7 +44,7 @@ use uefi_rs::ResultExt;
 
 use acpica_sys::{ACPI_MADT_INTERRUPT_OVERRIDE, ACPI_MADT_INTERRUPT_SOURCE, ACPI_MADT_IO_APIC, ACPI_MADT_LOCAL_APIC, ACPI_MADT_PCAT_COMPAT, ACPI_SUBTABLE_HEADER, ACPI_TABLE_DESC, ACPI_TABLE_HEADER, ACPI_TABLE_MADT, AcpiIsFailure, AcpiMadtType_ACPI_MADT_TYPE_INTERRUPT_OVERRIDE, AcpiMadtType_ACPI_MADT_TYPE_IO_APIC, AcpiMadtType_ACPI_MADT_TYPE_LOCAL_APIC};
 
-use crate::arch::x86_64::desctable::{LongCodeDataSegmentDesc, LongIdtDesc, LongNullSegmentDesc, LongSystemSegmentDesc, PseudoDesc, SegmentSelector};
+use crate::arch::x86_64::desctable::{LongCodeDataSegmentDesc, LongIdtDesc, LongNullSegmentDesc, LongSystemSegmentDesc, PseudoDesc, SegmentSel, SegmentSelector, SegmentSelTI};
 use crate::arch::x86_64::ioapic::{DeliveryMode, DestinationMode, IoApicDesc, IoApicRedTblVal, IrqPolarity, TriggerMode};
 use crate::arch::x86_64::isr::{cli, sti};
 use crate::arch::x86_64::msr::Msr;
@@ -446,14 +446,6 @@ fn init_kernel(bootloader_handle_uefi: uefi_rs::Handle, mut sys_table_uefi: uefi
 		efer_val |= 0x1 << 11; // Enable NXE
 		EFER.write(efer_val);
 		
-		// Set up x86 SYSCALL MSRs
-		// TODO: Even for long mode the CS and SS are loaded from STAR, need to set them!
-		STAR.write(0x0); // Clear bits, we explicitely don't support legacy protected mode
-		CSTAR.write(0x0); // Clear bits, we explicitely don't support compat mode
-		LSTAR.write(syscall::syscall_entry_long0 as u64); // Setup long mode syscall handler routine
-		const RFLAGS_IF: u64 = 0x0200;
-		SFMASK.write(RFLAGS_IF | 0); // Clear IF on syscall, disabling irqs 
-		
 //		#[repr(C)]
 //		struct GdtrPseudoDesc {
 //			_pad: [u16; 3],
@@ -482,7 +474,7 @@ fn init_kernel(bootloader_handle_uefi: uefi_rs::Handle, mut sys_table_uefi: uefi
 		}
 		*/
 		
-		static mut GDT_BUF: [MaybeUninit<u64>; 7] = MaybeUninit::uninit_array();
+		static mut GDT_BUF: [MaybeUninit<u64>; 8] = MaybeUninit::uninit_array();
 		static mut IDT_BUF: [MaybeUninit<LongIdtDesc>; 256] = MaybeUninit::uninit_array();
 		static mut TSS_BUF: [u32; 68] = [0; 68];
 		
@@ -516,10 +508,26 @@ fn init_kernel(bootloader_handle_uefi: uefi_rs::Handle, mut sys_table_uefi: uefi
 		//  can make GDT_BUF have a proper type instead of raw u64
 		let gdt_ptr = GDT_BUF.as_mut_ptr();
 		(gdt_ptr as *mut LongNullSegmentDesc).write(LongNullSegmentDesc::new());
+		
+		// Kenrel seg descs
+		// Due to how syscall works they need to be in order CS then DS/SS
+		const SYSCALL_GDT_SS_IDX: u16 = 1;
 		(gdt_ptr.offset(1) as *mut LongCodeDataSegmentDesc).write(LongCodeDataSegmentDesc::new_code(0, 1, 1, 0x0, 0)); // Kernel Code Segment
 		(gdt_ptr.offset(2) as *mut LongCodeDataSegmentDesc).write(LongCodeDataSegmentDesc::new_data(1, 0x0)); // Kernel Data Segment
-		(gdt_ptr.offset(3) as *mut LongCodeDataSegmentDesc).write(LongCodeDataSegmentDesc::new_code(0, 1, 1, 0x3, 1)); // Usermode Code Segment
-		(gdt_ptr.offset(4) as *mut LongCodeDataSegmentDesc).write(LongCodeDataSegmentDesc::new_data(1, 0x3)); // Usermode Data Segment
+		
+		// Usermode seg descs
+		// Note: These are mainly(?) used by sysret and NEED to be in order
+		// of SS then CS due to how weirdly sysret behaves.
+		// (it adds 2 to the CS sel idx and 1 to the SS sel idx...
+		//  if I understand correctly this is so that syscall/ret works
+		//  seamlessly with both long and compat mode, i.e. your GDT is: [.., compat_CS, shared_DS/SS, long_CS, ..])
+		
+		const SYSRET_UM_GDT_SS_IDX: u16 = 3;
+		(gdt_ptr.offset(SYSRET_UM_GDT_SS_IDX as isize + 0) as *mut LongCodeDataSegmentDesc)
+			.write(LongCodeDataSegmentDesc::new_data(1, 0x3)); // Usermode Data/Stack Segment
+		(gdt_ptr.offset(SYSRET_UM_GDT_SS_IDX as isize + 1) as *mut LongCodeDataSegmentDesc)
+			.write(LongCodeDataSegmentDesc::new_code(0, 1, 1, 0x3, 1)); // Usermode Code Segment
+		
 		// TODO: Figure out what RPL the TSS descriptor should have
 		(gdt_ptr.offset(5) as *mut LongSystemSegmentDesc).write(LongSystemSegmentDesc::new(TSS_BUF.as_ptr() as u64, core::alloc::Layout::for_value(&TSS_BUF).size().saturating_sub(1) as u32, 0b0, 0b0, 0b1, 0x0, 0xb)); // Long mode TSS
 		
@@ -632,6 +640,30 @@ fn init_kernel(bootloader_handle_uefi: uefi_rs::Handle, mut sys_table_uefi: uefi
 		let mut new_cs: u16;
 		asm!("mov {}, cs", out(reg) new_cs);
 		writeln!(tty_writer(), "new CS {:04x}h", new_cs);
+		
+		// [Set up x86 SYSCALL MSRs]
+		// Segment sel for syscall. (rpl is ignored)
+		let syscall_cs_ss_sel = SegmentSel::new(0x0, SegmentSelTI::GDT, SYSCALL_GDT_SS_IDX);
+		
+		// This is the segsel for the sysret (so usermode) cs and ss.
+		// Sysret to long mode uses seg sel idx+1 for SS and idx+2 for CS (and idx+0 for CS in compat mode, which we don't use).
+		// So idx is one less than our usermode SS gdt entry
+		// Note: Both rpl and it (i think?) are ignored.
+		let sysret_cs_ss_sel = SegmentSel::new(0x3, SegmentSelTI::GDT, SYSRET_UM_GDT_SS_IDX.checked_sub(1).unwrap());
+		
+		// Set IA32_STAR
+		let star_val = (sysret_cs_ss_sel.to_raw() as u64) << 48
+			| (syscall_cs_ss_sel.to_raw() as u64) << 32
+			| 0x0u32 as u64;
+		STAR.write(star_val);
+		
+		// Set syscall entry points
+		CSTAR.write(0x0); // Clear bits, we explicitely don't support compat mode
+		LSTAR.write(syscall::syscall_entry_long0 as u64); // Setup long mode syscall handler routine
+		
+		// Set syscall SFMASK to disable irqs on syscall entry
+		const RFLAGS_IF: u64 = 0x0200;
+		SFMASK.write(RFLAGS_IF | 0); // Clear IF on syscall, disabling irqs
 	}
 	
 	// Disable pic
