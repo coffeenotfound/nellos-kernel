@@ -812,34 +812,37 @@ fn init_kernel(bootloader_handle_uefi: uefi_rs::Handle, mut sys_table_uefi: uefi
 macro_rules! isr_entry {
 	($entry:ident => $handler_call:expr; $ec:tt) => {
 		#[naked]
-		pub unsafe extern "C" fn $entry() {
+		pub unsafe extern "sysv64" fn $entry() {
 			asm!(
 				// Save sysv64 caller-saved registers
-				"sub rsp, 72",
-				"mov [rsp+ 0], rax",
-				"mov [rsp+ 8], rcx",
-				"mov [rsp+16], rdx",
-				"mov [rsp+24], rsi",
-				"mov [rsp+32], rdi",
-				"mov [rsp+40],  r8",
-				"mov [rsp+48],  r9",
-				"mov [rsp+56], r10",
-				"mov [rsp+64], r11",
+				// Other regs will be saved implicitely by the inner func itself
+				// thanks to it's abi and us calling it instead of jmping to it
+				// (Using push instead of sub rsp + mov is better for performance
+				//  on modern (last 10 years) processors.
+				"push rax",
+				"push rcx",
+				"push rdx",
+				"push rsi",
+				"push rdi",
+				"push  r8",
+				"push  r9",
+				"push r10",
+				"push r11",
 				
 				// Call handler
 				"call {inner}",
 				
 				// Restore saved registers
-				"mov rax, [rsp+ 0]",
-				"mov rcx, [rsp+ 8]",
-				"mov rdx, [rsp+16]",
-				"mov rsi, [rsp+24]",
-				"mov rdi, [rsp+32]",
-				"mov  r8, [rsp+40]",
-				"mov  r9, [rsp+48]",
-				"mov r10, [rsp+56]",
-				"mov r11, [rsp+64]",
-				"add rsp, 72",
+				"pop rax",
+				"pop rcx",
+				"pop rdx",
+				"pop rsi",
+				"pop rdi",
+				"pop  r8",
+				"pop  r9",
+				"pop r10",
+				"pop r11",
+				
 				isr_entry!(@poperrcode; $ec),
 				
 				"iretq",
