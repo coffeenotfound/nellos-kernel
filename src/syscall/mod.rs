@@ -104,9 +104,9 @@ pub unsafe extern "sysv64" fn syscall_entry_long0() -> ! {
 		
 		handler = sym syscall_handler_long,
 		per_cpu_kern_stack_offset = const {offset_of!(PerCpuData, syscall_stack_base)},
-		per_cpu_temp_um_rsp_offset = const {offset_of!(PerCpuData, syscall_temp_um_rsp)}
+		per_cpu_temp_um_rsp_offset = const {offset_of!(PerCpuData, syscall_temp_um_rsp)},
 	
-		options(noreturn),
+		options(noreturn)
 	)
 }
 
