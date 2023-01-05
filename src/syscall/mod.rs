@@ -50,16 +50,18 @@ use crate::tty;
 #[naked]
 pub unsafe extern "sysv64" fn syscall_entry_long0() -> ! {
 	asm!(
-		// -- Switch to kernel stack
+		// [Switch to kernel stack]
 		// (Sadly this must be done in asm as `syscall_handler_long` assumes
 		//  it's a normal sysv64 function which can use the stack and clobber regs)
 		
 		// Swap gs segment which contains per-cpu kernel info for the current cpu
 		"swapgs",
 		
+		// Temporarily save um rsp before overwriting with kernel stack rsp
+		"mov gs:[{per_cpu_temp_um_rsp_offset}], rsp",
+		
 		// Load kernel stack from gs which points to this cpu's PerCpuData
-		"mov rsp, gs:[{kern_stack_offset}]",
-		"mov rbp, rsp",
+		"mov rsp, gs:[{per_cpu_kern_stack_offset}]",
 		
 		// Re-enable irqs after syscall has disabled them
 		// This is massively important to prevent a race condition
@@ -68,7 +70,7 @@ pub unsafe extern "sysv64" fn syscall_entry_long0() -> ! {
 		// (At least I think that might be bad, depends on how I implement other isrs)
 		"sti",
 		
-		// -- Save user regs to kernel stack
+		// [Save user regs to kernel stack]
 		// This also has to be done in asm so that the abi doesn't clobber any regs we need to save
 		// Also we need to push them backwards since the stack grows downwards, so that they
 		// have the same layout as `SyscallSavedRegs`
@@ -83,11 +85,14 @@ pub unsafe extern "sysv64" fn syscall_entry_long0() -> ! {
 		"push rdi",
 		"push rsi",
 		"push rbp",
-		"push rsp",
+		"push gs:[{per_cpu_temp_um_rsp_offset}]",
 		"push rdx",
 		"push rcx",
 		"push rbx",
 		"push rax",
+		
+		// After saving all the regs we can complete the stack switch by
+		// setting the kernel mode rbp
 		
 		// Load pointer to SyscallSavedRegs into rdi (first fn arg `saved_regs`)
 		"mov rdi, rsp",
@@ -98,8 +103,9 @@ pub unsafe extern "sysv64" fn syscall_entry_long0() -> ! {
 		"jmp {handler}",
 		
 		handler = sym syscall_handler_long,
-		kern_stack_offset = const {offset_of!(PerCpuData, stack_base)},
-		
+		per_cpu_kern_stack_offset = const {offset_of!(PerCpuData, syscall_stack_base)},
+		per_cpu_temp_um_rsp_offset = const {offset_of!(PerCpuData, syscall_temp_um_rsp)}
+	
 		options(noreturn),
 	)
 }
@@ -210,7 +216,11 @@ fn service_syscall(regs: &SyscallSavedRegs) {
 
 #[repr(C)]
 pub struct PerCpuData {
-	pub stack_base: *const u8,
+	pub syscall_stack_base: *const u8,
+	/// A place to temporarily save the usermode rsp
+	/// on syscall entry, so that the kernel can overwrite the rsp
+	/// with it's own kernel stack rsp and start saving regs
+	pub syscall_temp_um_rsp: u64,
 }
 
 /*
