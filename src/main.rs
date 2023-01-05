@@ -716,7 +716,7 @@ fn init_kernel(bootloader_handle_uefi: uefi_rs::Handle, mut sys_table_uefi: uefi
 		// and right now we don't enable it, so we only use
 		// normal APIC mode
 		
-		let apic_base_msr = Msr::from_nr(0x0000_001b);
+		let apic_base_msr = Msr::<u64>::from_nr(0x0000_001b);
 		let apic_base_msr_val = apic_base_msr.read();
 		
 		let lapic_base = apic_base_msr_val & 0xf_ffff_ffff_f000;
@@ -850,7 +850,7 @@ macro_rules! isr_entry {
 			
 			unsafe extern "sysv64" fn _inner() {
 				// Signal EOI to lapic
-				let lapic_base = Msr::from_nr(0x0000_001b).read() & 0xf_ffff_ffff_f000;
+				let lapic_base = Msr::<u64>::from_nr(0x0000_001b).read() & 0xf_ffff_ffff_f000;
 				((lapic_base+0xb0) as *mut u32).write_volatile(0x00);
 				
 //				let _ = writeln!(tty_writer(), "> IN ISR: {}", $id);

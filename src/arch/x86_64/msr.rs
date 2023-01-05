@@ -1,4 +1,5 @@
 use core::arch::asm;
+use core::marker::PhantomData;
 
 pub const EFER: Msr = Msr::from_nr(0xC000_0080);
 pub const STAR: Msr = Msr::from_nr(0xC000_0081);
@@ -8,12 +9,12 @@ pub const SFMASK: Msr = Msr::from_nr(0xC000_0084);
 
 pub const IA32_APIC_BASE: Msr = Msr::from_nr(0x0000_001b); // TODO: Is this the right addr?
 
-pub struct Msr(u32);
+pub struct Msr<T: MsrData = u64>(u32, PhantomData<*const T>);
 
-impl Msr {
+impl<T: MsrData> Msr<T> {
 	#[inline(always)]
 	pub const fn from_nr(nr: u32) -> Self {
-		Self(nr)
+		Self(nr, PhantomData)
 	}
 	
 	#[inline(always)]
@@ -22,13 +23,45 @@ impl Msr {
 	}
 	
 	#[inline(always)]
-	pub unsafe fn read(&self) -> u64 {
+	pub unsafe fn read(&self) -> T {
+		T::from_raw(read_msr(self.0))
+	}
+	
+	#[inline(always)]
+	pub unsafe fn write(&self, val: T) {
+		write_msr(self.0, val.to_raw());
+	}
+	
+	#[inline(always)]
+	pub unsafe fn read_raw(&self) -> u64 {
 		read_msr(self.0)
 	}
 	
 	#[inline(always)]
-	pub unsafe fn write(&self, val: u64) {
+	pub unsafe fn write_raw(&self, val: u64) {
 		write_msr(self.0, val);
+	}
+}
+
+// Needed to make Msr Send and Sync since PhantomData<*const T> isn't
+unsafe impl<T: MsrData> Send for Msr<T> {}
+unsafe impl<T: MsrData> Sync for Msr<T> {}
+
+/// Some 8-byte piece of data stored in a specified msr
+pub trait MsrData: Copy {
+	fn to_raw(self) -> u64;
+	fn from_raw(raw: u64) -> Self;
+}
+
+impl MsrData for u64 {
+	#[inline]
+	fn to_raw(self) -> u64 {
+		self
+	}
+	
+	#[inline]
+	fn from_raw(raw: u64) -> Self {
+		raw
 	}
 }
 
@@ -39,6 +72,7 @@ pub(self) unsafe fn read_msr(msr: u32) -> u64 {
 	
 	asm!(
 		"rdmsr",
+		
 		in("ecx") msr,
 		out("eax") low,
 		out("edx") high,
@@ -52,6 +86,7 @@ pub(self) unsafe fn read_msr(msr: u32) -> u64 {
 pub(self) unsafe fn write_msr(msr: u32, val: u64) {
 	asm!(
 		"wrmsr",
+		
 		in("ecx") msr,
 		in("eax") val as u32,
 		in("edx") (val >> 32) as u32,
