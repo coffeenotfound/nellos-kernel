@@ -1,8 +1,10 @@
 pub use gdt::*;
 pub use idt::*;
+pub use sel::*;
 
 mod gdt;
 mod idt;
+mod sel;
 
 /// Vol. 3A, §3.4.2 (p.2877)
 #[derive(Copy, Clone, Debug)]
