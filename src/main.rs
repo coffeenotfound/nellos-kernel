@@ -11,13 +11,14 @@
 #![feature(const_option)]
 
 #![feature(nonnull_slice_from_raw_parts)]
+#![feature(const_ptr_offset_from)]
 #![feature(maybe_uninit_uninit_array)]
 #![feature(maybe_uninit_extra)]
 #![feature(maybe_uninit_slice)]
 #![feature(asm_sym)]
+#![feature(asm_const)]
 #![feature(const_maybe_uninit_uninit_array)]
 
-// DEBUG:
 #![feature(fmt_as_str)]
 #![feature(panic_info_message)]
 #![feature(fmt_internals)]
