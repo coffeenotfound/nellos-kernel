@@ -5,7 +5,9 @@
 build-std = ["core", "compiler_builtins", "alloc"]
 build-std-features = ["compiler-builtins-mem"]
 
-[target.x86_64-none-kernel-nabi]
+[target.x86_64-nell-kernel]
 rustflags = [
 #	"-C", "link-arg=-Tkernel.ld",
+	# Needed to keep exported symbols in binary (like start0)
+#	"-C", "link-arg=-rdynamic",
 ]
