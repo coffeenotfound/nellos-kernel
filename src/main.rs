@@ -89,10 +89,40 @@ pub extern "sysv64" fn start0(bootloader_handle_uefi: uefi_rs::Handle, mut sys_t
 		// Note: This asm block is `noreturn` which means no variables of
 		//  the current kernel stack will be dropped if they are still in scope!
 		return asm!(
-			// TODO: Ensure we have a rex prefix, without it we would enter compat mode
-			"sysret",
+			"mov rcx, {um_entry_fn}",
+			"pushfq",
+			"pop r11",
+			"sysretq",
+			
+			um_entry_fn = sym test_um_main_lol,
 			options(noreturn),
 		);
+		
+		unsafe extern "sysv64" fn test_um_main_lol() {
+			let idx = 20_u64;
+			let [arg0, arg1, arg2] = [1_u64, 2, 3];
+	        asm!(
+	            "syscall",
+				
+	            // Map inputs
+	            in("rax") idx,
+	            in("rdi") arg0,
+	            in("rsi") arg1,
+	            in("rdx") arg2,
+				
+	            // Clobber sysv64 caller-saved regs
+	            lateout("rax") _,
+	            lateout("rcx") _,
+	            lateout("rdx") _,
+	            lateout("rsi") _,
+	            lateout("rdi") _,
+	            lateout("r8")  _,
+	            lateout("r9")  _,
+	            lateout("r10") _,
+	            lateout("r11") _,
+	        );
+			loop {}
+		}
 	}
 }
 
