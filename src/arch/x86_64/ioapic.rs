@@ -4,8 +4,6 @@ use core::mem::MaybeUninit;
 use bitfield::bitfield;
 
 use crate::mem::Phys;
-use crate::PtrOpsExt;
-use crate::vga::write_regs;
 
 // TODO: This whole architecture is still kinda bad
 //  since R/W is not specified per IO APIC register

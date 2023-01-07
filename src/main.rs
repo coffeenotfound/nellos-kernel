@@ -44,9 +44,10 @@ use uefi_rs::ResultExt;
 
 use acpica_sys::{ACPI_MADT_INTERRUPT_OVERRIDE, ACPI_MADT_INTERRUPT_SOURCE, ACPI_MADT_IO_APIC, ACPI_MADT_LOCAL_APIC, ACPI_MADT_PCAT_COMPAT, ACPI_SUBTABLE_HEADER, ACPI_TABLE_DESC, ACPI_TABLE_HEADER, ACPI_TABLE_MADT, AcpiIsFailure, AcpiMadtType_ACPI_MADT_TYPE_INTERRUPT_OVERRIDE, AcpiMadtType_ACPI_MADT_TYPE_IO_APIC, AcpiMadtType_ACPI_MADT_TYPE_LOCAL_APIC};
 
-use crate::arch::x86_64::desctable::{LongCodeDataSegmentDesc, LongIdtDesc, LongNullSegmentDesc, LongSystemSegmentDesc, PseudoDesc, SegmentSel, SegmentSelector, SegmentSelTI};
+use crate::arch::x86_64::desctable::{LongCodeDataSegmentDesc, LongIdtDesc, LongNullSegmentDesc, LongSystemSegmentDesc, PseudoDesc, SegmentSel, SegmentSelTI};
+use crate::arch::x86_64::interrupt;
 use crate::arch::x86_64::ioapic::{DeliveryMode, DestinationMode, IoApicDesc, IoApicRedTblVal, IrqPolarity, TriggerMode};
-use crate::arch::x86_64::isr::{cli, sti};
+use crate::arch::x86_64::interrupt::{cli, sti};
 use crate::arch::x86_64::msr::Msr;
 use crate::global_alloc::KernelGlobalAlloc;
 use crate::mem::Phys;
@@ -81,49 +82,50 @@ pub extern "sysv64" fn start0(bootloader_handle_uefi: uefi_rs::Handle, mut sys_t
 	// TODO: Init and start all other APs
 	init_kernel(bootloader_handle_uefi, sys_table_uefi);
 	
-	// DEBUG: Test jump to usermode
-	unsafe {
-		// Use SYSCALL/SYSRET instead of SYSENTER/SYSEXIT
-		
-		// Actually jump to userspace
-		// Note: This asm block is `noreturn` which means no variables of
-		//  the current kernel stack will be dropped if they are still in scope!
-		return asm!(
-			"mov rcx, {um_entry_fn}",
-			"pushfq",
-			"pop r11",
-			"sysretq",
-			
-			um_entry_fn = sym test_um_main_lol,
-			options(noreturn),
-		);
-		
-		unsafe extern "sysv64" fn test_um_main_lol() {
-			let idx = 20_u64;
-			let [arg0, arg1, arg2] = [1_u64, 2, 3];
-	        asm!(
-	            "syscall",
-				
-	            // Map inputs
-	            in("rax") idx,
-	            in("rdi") arg0,
-	            in("rsi") arg1,
-	            in("rdx") arg2,
-				
-	            // Clobber sysv64 caller-saved regs
-	            lateout("rax") _,
-	            lateout("rcx") _,
-	            lateout("rdx") _,
-	            lateout("rsi") _,
-	            lateout("rdi") _,
-	            lateout("r8")  _,
-	            lateout("r9")  _,
-	            lateout("r10") _,
-	            lateout("r11") _,
-	        );
-			loop {}
-		}
-	}
+//	// DEBUG: Test jump to usermode
+//	unsafe {
+//		// Use SYSCALL/SYSRET instead of SYSENTER/SYSEXIT
+//		
+//		// Actually jump to userspace
+//		// Note: This asm block is `noreturn` which means no variables of
+//		//  the current kernel stack will be dropped if they are still in scope!
+//		return asm!(
+//			"mov rcx, {um_entry_fn}",
+//			"pushfq",
+//			"pop r11",
+//			"sysretq",
+//			
+//			um_entry_fn = sym test_um_main_lol,
+//			options(noreturn),
+//		);
+//		
+//		unsafe extern "sysv64" fn test_um_main_lol() {
+//			let idx = 20_u64;
+//			let [arg0, arg1, arg2] = [1_u64, 2, 3];
+//	        asm!(
+//	            "syscall",
+//				
+//	            // Map inputs
+//	            in("rax") idx,
+//	            in("rdi") arg0,
+//	            in("rsi") arg1,
+//	            in("rdx") arg2,
+//				
+//	            // Clobber sysv64 caller-saved regs
+//	            lateout("rax") _,
+//	            lateout("rcx") _,
+//	            lateout("rdx") _,
+//	            lateout("rsi") _,
+//	            lateout("rdi") _,
+//	            lateout("r8")  _,
+//	            lateout("r9")  _,
+//	            lateout("r10") _,
+//	            lateout("r11") _,
+//	        );
+//			loop {}
+//		}
+//	}
+	loop {}
 }
 
 fn init_kernel(bootloader_handle_uefi: uefi_rs::Handle, mut sys_table_uefi: uefi_rs::prelude::SystemTable<uefi_rs::table::Boot>) {
@@ -505,33 +507,6 @@ fn init_kernel(bootloader_handle_uefi: uefi_rs::Handle, mut sys_table_uefi: uefi
 		*/
 		
 		static mut GDT_BUF: [MaybeUninit<u64>; 8] = MaybeUninit::uninit_array();
-		static mut IDT_BUF: [MaybeUninit<LongIdtDesc>; 256] = MaybeUninit::uninit_array();
-		static mut TSS_BUF: [u32; 68] = [0; 68];
-		
-		{// Set up the TSS
-			// Reserved, IGN
-			TSS_BUF[0] = 0x0;
-			TSS_BUF[7] = 0x0;
-			TSS_BUF[22] = 0x0;
-			TSS_BUF[23] = 0x0;
-			
-			// Zero out rsp1/rsp2
-			TSS_BUF[3] = 0x0;
-			TSS_BUF[4] = 0x0;
-			TSS_BUF[5] = 0x0;
-			TSS_BUF[6] = 0x0;
-			
-			// Zero out IST entries
-			// TODO: Maybe make use of ISTs in the future
-			for ist in TSS_BUF[8..22].array_chunks_mut::<2>() {
-				*ist = [0x0, 0x0];
-			}
-			
-			// Disable IO Permission Bitmap by setting the IOPB address offset
-			// to u16::MAX, causing it to *definitely* fall outside the TSS segment limit
-			// (https://stackoverflow.com/questions/54876039/creating-a-proper-task-state-segment-tss-structure-with-and-without-an-io-bitm/54876040#54876040)
-			TSS_BUF[24] = (0xffff_ffff << 16) | 0x0000_0000;
-		}
 		
 		// Construct GDT
 		// TODO: Put LongNullSegmentDesc et al into a union so we
@@ -559,25 +534,10 @@ fn init_kernel(bootloader_handle_uefi: uefi_rs::Handle, mut sys_table_uefi: uefi
 			.write(LongCodeDataSegmentDesc::new_code(0, 1, 1, 0x3, 1)); // Usermode Code Segment
 		
 		// TODO: Figure out what RPL the TSS descriptor should have
-		(gdt_ptr.offset(5) as *mut LongSystemSegmentDesc).write(LongSystemSegmentDesc::new(TSS_BUF.as_ptr() as u64, core::alloc::Layout::for_value(&TSS_BUF).size().saturating_sub(1) as u32, 0b0, 0b0, 0b1, 0x0, 0xb)); // Long mode TSS
+		(gdt_ptr.offset(5) as *mut LongSystemSegmentDesc)
+			.write(LongSystemSegmentDesc::new(interrupt::TSS_BUF.as_ptr() as u64, core::alloc::Layout::for_value(&interrupt::TSS_BUF).size().saturating_sub(1) as u32, 0b0, 0b0, 0b1, 0x0, 0xb)); // Long mode TSS
 		
-		// Construct IDT
-		let gdt_code_selector = SegmentSelector::new(0x0, false, 1);
-		for i in 0..256 {
-			let isr: u64 = match i {
-				0x03 => isr_bp as u64,
-				0x08 => isr_df as u64,
-				0x0c => isr_ss as u64,
-				0x0d => isr_gp as u64,
-				0x42 => isr_serial_com13 as u64,
-				_ => isr_other as u64,
-			};
-			IDT_BUF[i].write(LongIdtDesc::new(isr, gdt_code_selector, 0, 0b1110, 0x0, 1));
-		}
-		
-		// TODO: Ensure no interrupts occur before or while configuring the GDT, IDT, APIC, etc. else it will probably crash
-		
-		// Set up GDT
+		// Load GDT
 		let gdt_desc = PseudoDesc {
 			base: &GDT_BUF as *const _ as u64,
 //			limit: core::mem::size_of_val(&GDT_BUF).saturating_sub(1) as u16,
@@ -585,28 +545,15 @@ fn init_kernel(bootloader_handle_uefi: uefi_rs::Handle, mut sys_table_uefi: uefi
 		};
 		asm!("lgdt [{}]", in(reg) &gdt_desc, options(nostack));
 		
-		// Set up IDT
-		let idt_desc = PseudoDesc {
-//			base: IDT_BUF.as_ptr() as u64,
-			base: &IDT_BUF as *const _ as u64,
-			limit: core::alloc::Layout::for_value(&IDT_BUF).size().saturating_sub(1) as u16,
-		};
-		asm!("lidt [{}]", in(reg) &idt_desc, options(nostack));
-		
-		// DEBUG:
-		writeln!(tty_writer(), "gdt desc: {:x?}", gdt_desc);
-		writeln!(tty_writer(), "idt desc: {:x?}", idt_desc);
-		writeln!(tty_writer(), "gdt dump: {:x?}", MaybeUninit::slice_assume_init_ref(&GDT_BUF));
-		writeln!(tty_writer(), "idt dump: {:x?}", MaybeUninit::slice_assume_init_ref(&IDT_BUF[0..4]));
-		
 		// DEBUG: Dump gdt entries
 		for (i, off) in (0..=gdt_desc.limit as usize).step_by(8).enumerate() {
 			let seg_desc = &*((gdt_desc.base as usize + off) as *const u64);
-			writeln!(tty_writer(), "dump OUR gdt desc #{:02}: {:x}", i, seg_desc);
+			let _ = writeln!(tty_writer(), "dump OUR gdt desc #{:02}: {:x}", i, seg_desc);
 		}
 		
-		// DEBUG: Dump idt entry
-		writeln!(tty_writer(), "dump OUR #bp idte: +0: {:x}, +8: {:x}", *((idt_desc.base as usize + 3*16) as *const u64), *((idt_desc.base as usize + 3*16+8) as *const u64));
+		// Set up interrupt stuff
+		interrupt::setup_idt();
+		interrupt::setup_interrupt_tss();
 		
 		// Set up segment registers
 		writeln!(tty_writer(), "changing segments");
@@ -657,7 +604,7 @@ fn init_kernel(bootloader_handle_uefi: uefi_rs::Handle, mut sys_table_uefi: uefi
 			"here:",
 			"add rsp, 16",
 			
-			sel = in(reg) SegmentSelector::new(0x0, false, 1).into_raw(),
+			sel = in(reg) SegmentSel::new(0x0, SegmentSelTI::GDT, 1).to_raw(),
 			
 			// DEBUG:
 //			test_sel = out(reg) test_sel,
@@ -808,115 +755,6 @@ fn init_kernel(bootloader_handle_uefi: uefi_rs::Handle, mut sys_table_uefi: uefi
 ////	);
 ////	for _ in 0..usize::MAX {}
 //}
-
-macro_rules! isr_entry {
-	($entry:ident => $handler_call:expr; $ec:tt) => {
-		#[naked]
-		pub unsafe extern "sysv64" fn $entry() {
-			asm!(
-				// Save sysv64 caller-saved registers
-				// Other regs will be saved implicitely by the inner func itself
-				// thanks to it's abi and us calling it instead of jmping to it
-				// (Using push instead of sub rsp + mov is better for performance
-				//  on modern (last 10 years) processors.
-				"push rax",
-				"push rcx",
-				"push rdx",
-				"push rsi",
-				"push rdi",
-				"push  r8",
-				"push  r9",
-				"push r10",
-				"push r11",
-				
-				// Call handler
-				"call {inner}",
-				
-				// Restore saved registers
-				"pop rax",
-				"pop rcx",
-				"pop rdx",
-				"pop rsi",
-				"pop rdi",
-				"pop  r8",
-				"pop  r9",
-				"pop r10",
-				"pop r11",
-				
-				isr_entry!(@poperrcode; $ec),
-				
-				"iretq",
-				
-				inner = sym _inner,
-				options(noreturn),
-			);
-			
-			unsafe extern "sysv64" fn _inner() {
-				// Signal EOI to lapic
-				let lapic_base = Msr::<u64>::from_nr(0x0000_001b).read() & 0xf_ffff_ffff_f000;
-				((lapic_base+0xb0) as *mut u32).write_volatile(0x00);
-				
-//				let _ = writeln!(tty_writer(), "> IN ISR: {}", $id);
-				if $ec {
-					let _errcode: usize;
-					let rip: usize;
-					asm!(
-						"pop {temp:r}", // Pop frame return rip
-						"pop {errcode:r}", // Pop error code
-						"push {temp:r}", // Re-push frame retur rip
-						
-						errcode = out(reg) _errcode,
-						temp = out(reg) _,
-					);
-					asm!("mov {:r}, qword ptr [rsp]", out(reg) rip);
-					
-//					let _ = writeln!(tty_writer(), "errcode {:x}, rip {:08x}", errcode, rip);
-				}
-				
-				// Call handler
-				$handler_call;
-				
-//				for _ in 0..(0x1<<20) {}
-			}
-		}
-	};
-	(@poperrcode; true) => ("add rsp, 8");
-	(@poperrcode; false) => ("");
-}
-
-isr_entry!(isr_other => echo_handler("#<other>"); false);
-isr_entry!(isr_bp => echo_handler("#bp"); false);
-isr_entry!(isr_df => echo_handler("#df"); false);
-isr_entry!(isr_ss => echo_handler("#ss"); false);
-isr_entry!(isr_gp => echo_handler("#gp"); true);
-
-isr_entry!(isr_serial_com13 => serial_com13_handler(); false);
-
-fn echo_handler(name: &'_ str) {
-	let _ = writeln!(tty_writer(), "> IN ISR: {}", name);
-}
-
-fn serial_com13_handler() {
-//	let mut buf = [0u8; 4];
-//	
-//	buf.iter_mut()
-//		.zip(iter::from_fn(|| unsafe {read_tty_char()}))
-//		.for_each(|(slot, char)| *slot = char);
-//	
-//	let _ = writeln!(tty_writer(), "tty >> {}", core::str::from_utf8(&buf).unwrap());
-//	let _ = writeln!(tty_writer(), "tty >> {:?}", &buf);
-	
-	while let Some(c) = unsafe {read_tty_char()} {
-//		let _ = writeln!(tty_writer(), "tty >> {:02X}h", c);
-//		let _ = write!(tty_writer(), "{}", char::from_u32(c).unwrap());
-		let _ = tty_writer().write_char(char::from_u32(c as u32).unwrap());
-	}
-	
-	let iir = unsafe {crate::arch::x86_64::port::inb(0x3F8 + 2)};
-	
-//	let _ = writeln!(tty_writer(), "tty status {:08b}", iir);
-//	for _ in 0..(0x1<<20) {}
-}
 
 #[cfg(target_arch = "aarch64")]
 #[no_mangle]
