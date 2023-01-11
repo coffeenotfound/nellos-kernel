@@ -1,3 +1,5 @@
+use core::fmt;
+use core::fmt::Pointer;
 use core::ptr::NonNull;
 
 #[deprecated(note = "Use normal pointers/references instead which are implicitely assumed to be in the virtual memory map of the kernel.")]
@@ -36,6 +38,14 @@ impl<T: ?Sized> Clone for Phys<*mut T> {
 impl<T: ?Sized> Clone for Phys<NonNull<T>> {
 	fn clone(&self) -> Self {
 		*self
+	}
+}
+
+impl<T: Addr + fmt::Debug> fmt::Debug for Phys<T> {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		f.debug_tuple("Phys")
+			.field(&self.0)
+			.finish()
 	}
 }
 
