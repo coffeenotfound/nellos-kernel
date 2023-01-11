@@ -64,6 +64,7 @@ pub mod arch;
 pub mod vga;
 pub mod tty;
 pub mod dis;
+pub mod cpu;
 
 #[global_allocator]
 static KERNEL_GLOBAL_ALLOC: KernelGlobalAlloc = KernelGlobalAlloc::new();
